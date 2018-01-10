@@ -50,7 +50,6 @@ pub enum Value {
 }
 
 impl Value {
-
     /// Takes a `ValueType` and returns a new, zero'ed `Value`
     /// of the appropriate type.
     fn default_from_type(t: elements::ValueType) -> Self {
@@ -92,7 +91,9 @@ impl VariableSlot {
     }
 }
 
-
+/// An index into a module's `function` vector.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FuncIdx(usize);
 
 /// A function ready to be executed.
 #[derive(Debug, Clone)]
@@ -102,12 +103,73 @@ pub struct Func {
     body: Vec<elements::Opcode>,
 }
 
+/// A table.
+///
+/// Currently, a table is *purely* a mapping of
+/// integers to anyfunc's.
+///
+/// Obviously mainly there for integration with Javascript.
 #[derive(Debug, Clone)]
 pub struct Table {
+    /// Actual data
+    data: Vec<FuncIdx>,
+    /// Maximum size
+    max: Option<u32>,
 }
 
+impl Table {
+    fn new() -> Self {
+        Self {
+            data: vec![],
+            max: None,
+        }
+    }
+
+    /// Resizes the underlying storage, zero'ing it in the process.
+    /// For a Table it fills it with `FuncIdx(0)`, even
+    /// in the case that there IS no function 0.
+    fn fill(&mut self, size: u32) {
+        let mut v = Vec::with_capacity(size as usize);
+        v.resize(size as usize, FuncIdx(0));
+        self.data = v;
+        self.max = Some(size);
+    }
+
+}
+
+/// A structure containing a memory space.
 #[derive(Debug, Clone)]
 pub struct Memory {
+    /// Actual data
+    data: Vec<u8>,
+    /// Maximum size, in units of 65,536 bytes
+    max: Option<u32>,
+}
+
+impl Memory {
+    const MEMORY_PAGE_SIZE: usize = 65_536;
+    
+    pub fn new(size: Option<u32>) -> Self {
+        let mut mem = Self {
+            data: vec![],
+            max: None,
+        };
+        if let Some(size) = size {
+            mem.fill(size);
+        }
+        mem
+    }
+
+    /// Resizes the underlying storage, zero'ing it in the process.
+    fn fill(&mut self, size: u32) {
+        use std::usize;
+        let v_size = usize::checked_mul(Self::MEMORY_PAGE_SIZE, size as usize)
+            .expect("Tried to allocate memory bigger than usize!");
+        let mut v = Vec::with_capacity(v_size);
+        v.resize(v_size, 0);
+        self.data = v;
+        self.max = Some(size);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +185,8 @@ pub struct ModuleInstance {
     funcs: Vec<Func>,
     /// Index of start function, if any.
     start: Option<usize>,
-    /// wasm 1.0 defines only a single table
+    /// wasm 1.0 defines only a single table,
+    /// but we can import multiple of them?
     tables: Table,
     /// wasm 1.0 defines only a single memory.
     mem: Memory,
@@ -143,20 +206,23 @@ impl ModuleInstance {
             funcs: vec![],
             start: None,
             
-            tables: Table {},
-            mem: Memory {},
+            tables: Table::new(),
+            mem: Memory::new(None),
             globals: vec![],
 
             validated: false,
         };
 
+        // Allocate types
         if let Some(types) = module.type_section() {
             let functypes = types.types().iter()
                 .map(From::from);
             m.types.extend(functypes);
         }
 
-        
+
+        // Allocate functions
+        //
         // In `wat` a function's type index is declared
         // along with the function, but in the binary `wasm`
         // it's in its own section; the `code` section
@@ -185,22 +251,68 @@ impl ModuleInstance {
             panic!("Code section exists but type section does not, or vice versa!");
         }
 
+        // Allocate tables
+        if let Some(table) = module.table_section() {
+            println!("Table: {:?}", table);
+            // currently we can only have one table section with
+            // 0 or 1 elements in it, so.
+            assert!(table.entries().len() < 2, "More than one memory entry, should never happen!");
+            if let Some(table) = table.entries().iter().next() {
+                // TODO: As far as I can tell, the memory's minimum size is never used?
+                let _min = table.limits().initial();
+                let max = table.limits().maximum();
+
+                // TODO: It's apparently valid for a memory to have no max size?
+                if let Some(max) = max {
+                    m.tables.fill(max);
+                }
+            }
+
+            if let Some(elements) = module.elements_section() {
+                // TODO
+                unimplemented!();
+            }
+        }
+
+        // Allocate memories
+        if let Some(memory) = module.memory_section() {
+            // currently we can only have one memory section with
+            // 0 or 1 elements in it, so.
+            assert!(memory.entries().len() < 2, "More than one memory entry, should never happen!");
+            if let Some(memory) = memory.entries().iter().next() {
+                // TODO: As far as I can tell, the memory's minimum size is never used?
+                let _min = memory.limits().initial();
+                let max = memory.limits().maximum();
+
+                // TODO: It's apparently valid for a memory to have no max size?
+                if let Some(max) = max {
+                    m.mem.fill(max);
+                }
+            }
+                 
+            if let Some(data) = module.data_section() {
+                // TODO
+                unimplemented!();
+            }
+        }
+
+
+        // Allocate imports
         if let Some(imports) = module.import_section() {
             println!("Imports: {:?}", imports);
         }
 
+        // Allocate exports
         if let Some(exports) = module.export_section() {
             println!("Exports: {:?}", exports);
         }
 
+        // Check for start section
         if let Some(start) = module.start_section() {
             let start = start as usize;
             assert!(start < m.funcs.len(), "Start section references a non-existent function!");
             m.start = Some(start);
         }
-
-        // TODO: tables, elements, memory, data,
-        // globals.
 
         m
     }
@@ -264,6 +376,17 @@ impl Interpreter {
 mod tests {
     use parity_wasm;
     use super::*;
+
+    /// Make sure that adding a non-validated module to a program fails.
+    #[test]
+    #[should_panic]
+    fn test_validate_failure() {
+        let input_file = "test_programs/inc.wasm";
+        let module = parity_wasm::deserialize_file(input_file).unwrap();
+        let mut mod_instance = ModuleInstance::new(module);
+        let program = Program::new()
+            .with_module("inc", mod_instance);
+    }
     
     #[test]
     fn test_create() {
