@@ -1,5 +1,22 @@
 # nanowasm
+
 A small standalone WebAssembly interpreter in Rust
+
+# Goals
+
+This is a hobby project, not intended to be a professional-grade tool.  But if it gets to that point, great!  I think a small,
+lightweight interpreter would be really useful for things like embedding, running unit tests on generated wasm code, as an
+extension system, etc.
+
+The road map is, more or less in order:
+
+ * Implement all of wasm32 1.0 correctly, passing standard tests and fuzzing
+ * Make it *easy* to run as a standalone interpreter, or embedded in other programs
+ * Make it *easy* to add custom modules written in Rust
+ * Nice debugging tools?
+ * Make it reasonably fast?
+ * JIT???
+ * Load custom modules written in Rust or C as DLL's???
 
 # Building programs
 
@@ -13,3 +30,11 @@ wat2wasm inc.wast
 ```
 
 This should create a `inc.wasm` program which is what you can actually load and run.
+
+# Similar projects
+
+ * parity-wasm: A crate for serializing/deserializing wasm code.  Also includes its own interpreter, but I wanted to write my own and I find theirs hard to extend
+
+# Licence
+
+Apache/MIT

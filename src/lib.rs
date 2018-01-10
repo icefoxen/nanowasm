@@ -47,7 +47,9 @@ pub struct Global {
 
 /// A loaded wasm module
 pub struct ModuleInstance {
+    /// Function type vector
     types: Vec<FuncType>,
+    /// Function value vector
     funcs: Vec<Func>,
     /// wasm 1.0 defines only a single table
     tables: Table,
@@ -59,6 +61,38 @@ pub struct ModuleInstance {
 
 impl ModuleInstance {
     fn new(module: elements::Module) -> Self {
+        assert_eq!(module.version(), 1);
+        
+        if let Some(code) = module.code_section() {
+            println!("Code: {:?}", code.bodies());
+        }
+
+        if let Some(types) = module.type_section() {
+            println!("Types: {:?}", types.types());
+        }
+
+        if let Some(functions) = module.function_section() {
+            let funcs = functions.entries().iter()
+                .map(|x| x.type_ref())
+                .collect::<Vec<_>>();
+            println!("Functions: {:?}", &funcs);
+        }
+
+        if let Some(imports) = module.import_section() {
+            println!("Imports: {:?}", imports);
+        }
+
+        if let Some(exports) = module.export_section() {
+            println!("Exports: {:?}", exports);
+        }
+
+        if let Some(start) = module.start_section() {
+            println!("Start");
+        }
+
+        // TODO: tables, elements, memory, data,
+        // globals.
+
         Self {
             types: vec![],
             funcs: vec![],
@@ -97,5 +131,6 @@ mod tests {
         let program = Program::new()
             .with_module("inc", mod_instance);
         let interpreter = Interpreter::new(program);
+        assert!(false);
     }
 }
