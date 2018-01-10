@@ -36,11 +36,17 @@ cd test_programs
 wat2wasm inc.wast
 ```
 
-This should create a `inc.wasm` program which is what you can actually load and run.
+This should create a `inc.wasm` program which is what you can actually load and run:
+
+```
+cargo run -- test_programs/inc.wasm
+```
 
 # Similar projects
 
  * parity-wasm: A crate for serializing/deserializing wasm code.  Also includes its own interpreter, but I wanted to write my own and I find theirs hard to extend
+ * [WebAssembly reference interpreter](https://github.com/WebAssembly/spec/tree/master/interpreter)
+ * [WebAssembly Binary Toolkit](https://github.com/WebAssembly/wabt)
 
 # Licence
 

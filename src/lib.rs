@@ -134,7 +134,7 @@ pub struct ModuleInstance {
 
 impl ModuleInstance {
     /// Instantiates and initializes a new module.
-    /// Does NOT run the start function though!
+    /// Does NOT validate or run the start function though!
     fn new(module: elements::Module) -> Self {
         assert_eq!(module.version(), 1);
 
@@ -150,6 +150,13 @@ impl ModuleInstance {
             validated: false,
         };
 
+        if let Some(types) = module.type_section() {
+            let functypes = types.types().iter()
+                .map(From::from);
+            m.types.extend(functypes);
+        }
+
+        
         // In `wat` a function's type index is declared
         // along with the function, but in the binary `wasm`
         // it's in its own section; the `code` section
@@ -158,22 +165,24 @@ impl ModuleInstance {
         // together here.
         if let (Some(code), Some(functions)) = (module.code_section(), module.function_section()) {
             assert_eq!(code.bodies().len(), functions.entries().len());
+            // Evade double-borrow of m here.
+            let types = &m.types;
             let converted_funcs = code.bodies().iter()
                 .zip(functions.entries())
-                .map(|(c, f)| Func {
-                    typeidx: TypeIdx(f.type_ref() as usize),
-                    locals: VariableSlot::from_locals(c.locals()),
-                    body: c.code().elements().to_owned(),
+                .map(|(c, f)| {
+                    // Make sure the function signature is a valid type.
+                    let type_idx = f.type_ref() as usize;
+                    assert!(type_idx < types.len(), "Function refers to a type signature that does not exist!");
+                    
+                    Func {
+                        typeidx: TypeIdx(type_idx),
+                        locals: VariableSlot::from_locals(c.locals()),
+                        body: c.code().elements().to_owned(),
+                    }
                 });
             m.funcs.extend(converted_funcs);
         } else {
             panic!("Code section exists but type section does not, or vice versa!");
-        }
-
-        if let Some(types) = module.type_section() {
-            let functypes = types.types().iter()
-                .map(From::from);
-            m.types.extend(functypes);
         }
 
         if let Some(imports) = module.import_section() {
