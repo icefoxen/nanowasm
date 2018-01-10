@@ -22,6 +22,13 @@ The road map is, more or less in order:
 
 Fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like assemblers.
 
+```
+sudo apt install clang cmake
+git clone --recursive https://github.com/WebAssembly/wabt.git
+cd wabt
+make -j$(nproc)
+```
+
 The assembler is `wat2wasm`, so use that.
 
 ```
