@@ -10,9 +10,10 @@ extension system, etc.
 
 The road map is, more or less in order:
 
- * Implement all of wasm32 1.0 correctly, passing standard tests and fuzzing
+ * Implement all of wasm32 1.0 core correctly, passing standard tests and fuzzing
  * Make it *easy* to run as a standalone interpreter, or embedded in other programs
  * Make it *easy* to add custom modules written in Rust
+ * Make it *easy* to run Rust code built with `no_std` for the wasm32-unknown-unknown target, and provide a basic console API
  * Nice debugging tools?
  * Make it reasonably fast?
  * JIT???
