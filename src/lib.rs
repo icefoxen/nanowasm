@@ -121,6 +121,8 @@ pub struct ModuleInstance {
     types: Vec<FuncType>,
     /// Function value vector
     funcs: Vec<Func>,
+    /// Index of start function, if any.
+    start: Option<usize>,
     /// wasm 1.0 defines only a single table
     tables: Table,
     /// wasm 1.0 defines only a single memory.
@@ -139,6 +141,7 @@ impl ModuleInstance {
         let mut m = Self {
             types: vec![],
             funcs: vec![],
+            start: None,
             
             tables: Table {},
             mem: Memory {},
@@ -166,22 +169,11 @@ impl ModuleInstance {
         } else {
             panic!("Code section exists but type section does not, or vice versa!");
         }
-        
-        if let Some(code) = module.code_section() {
-            println!("Code: {:?}", code.bodies());
-        }
 
         if let Some(types) = module.type_section() {
             let functypes = types.types().iter()
                 .map(From::from);
             m.types.extend(functypes);
-        }
-
-        if let Some(functions) = module.function_section() {
-            let funcs = functions.entries().iter()
-                .map(|x| x.type_ref())
-                .collect::<Vec<_>>();
-            println!("Functions: {:?}", &funcs);
         }
 
         if let Some(imports) = module.import_section() {
@@ -193,7 +185,9 @@ impl ModuleInstance {
         }
 
         if let Some(start) = module.start_section() {
-            println!("Start: {:?}", start);
+            let start = start as usize;
+            assert!(start < m.funcs.len(), "Start section references a non-existent function!");
+            m.start = Some(start);
         }
 
         // TODO: tables, elements, memory, data,
