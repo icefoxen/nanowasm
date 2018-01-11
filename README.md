@@ -22,6 +22,7 @@ The road map is, more or less in order:
 # Non-goals
 
  * Run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) it's little-endian.
+ * Zero use of `unsafe`; if we can make a *significant* performance win with unsafe code, we should.  Properly-validated WebAssembly code should be safe itself.  Naturally, not using unsafe would be best.
 
 
 # Building programs

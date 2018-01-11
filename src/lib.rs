@@ -383,6 +383,42 @@ impl LoadedModule {
 // }
 
 
+/// The context for an executing function.
+#[derive(Debug, Clone, Default)]
+pub struct StackFrame {
+    value_stack:  Vec<Value>,
+    labels: Vec<usize>,
+    locals: Vec<Value>,
+    // This IS an activation record so we don't need
+    // to store those separately.
+}
+
+impl StackFrame {
+    /// Takes a Func and allocates a stack frame for it, then pushes
+    /// the given args to its locals.
+    fn from_func(func: &Func, functype: &FuncType, args: &[Value]) -> Self {
+        // Allocate space for locals+params
+        let mut locals = Vec::with_capacity(func.locals.len() + functype.params.len());
+        assert_eq!(functype.params.len(), args.len(), "Tried to create stack frame for func with different number of parameters than the type says it takes!");
+
+        // Push params
+        locals.extend(args.into_iter());
+        // Fill remaining space with 0's
+        let iter = functype.params.iter()
+            .map(|t| Value::default_from_type(*t));
+        locals.extend(iter);
+
+        Self {
+            value_stack: vec![],
+            labels: vec![],
+            locals: locals,
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct ModuleInstance {
+
+}
 
 /// An interpreter which runs a particular program.
 ///
@@ -408,13 +444,15 @@ impl LoadedModule {
 /// module instance to allow it to resolve its indices to addresses.
 #[derive(Debug, Clone)]
 pub struct Interpreter {
-    value_stack: Vec<parity_wasm::RuntimeValue>,
+    stack: Vec<StackFrame>,
     funcs: Vec<Func>,
     tables: Vec<Table>,
     mems: Vec<Memory>,
     globals: Vec<Global>,
-    modules: Vec<LoadedModule>,
+    module_instances: Vec<ModuleInstance>,
+    modules: HashMap<String, LoadedModule>,
 }
+
 
 /// Function address types
 struct FunctionAddress(usize);
@@ -425,12 +463,13 @@ struct GlobalAddress(usize);
 impl Interpreter {
     fn new() -> Self {
         Self {
-            value_stack: vec![],
+            stack: vec![],
             funcs: vec![],
             tables: vec![],
             mems: vec![],
             globals: vec![],
-            modules: vec![],
+            module_instances: vec![],
+            modules: HashMap::new(),
         }
     }
 
@@ -446,7 +485,7 @@ impl Interpreter {
     fn with_module(mut self, module: LoadedModule
 ) -> Self {
         assert!(module.validated);
-        self.modules.push(module);
+        self.modules.insert(module.name.to_owned(), module);
         self
     }
 
@@ -454,10 +493,34 @@ impl Interpreter {
         panic!("Trap occured!  Aieee!")
     }
 
-    fn run_function(&mut self, func: FunctionAddress) {
-        let function = self.funcs.get(func.0)
-            .expect("Invalid function address, should never happen");
-        let mut locals = function.locals.clone();
+    /// Takes a loaded module, pulls it apart, and shoves all its
+    /// parts into the interpreter's Store.  Produces a ModuleInstance
+    /// which lets you translate indices referring to module resources
+    /// into addresses referring to Store resources.
+    fn instantiate(&mut self, module: &LoadedModule) {
+
+    }
+
+
+    fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
+        // let function = self.funcs.get(func.0)
+        //     .expect("Invalid function address, should never happen");
+        let function = &self.modules[module].funcs[1];
+        let func_type = &self.modules[module].types[function.typeidx.0];
+        let frame = StackFrame::from_func(function, &func_type, args);
+        println!("Frame is {:?}", frame);
+        self.stack.push(frame);
+        for op in &function.body {
+            println!("Op is {:?}", op);
+        }
+        self.stack.pop();
+    }
+
+    fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
+        // let function = self.funcs.get(func.0)
+        //     .expect("Invalid function address, should never happen");
+        let function = &self.funcs[0];
+
         for op in &function.body {
             println!("Op is {:?}", op);
         }
@@ -517,7 +580,8 @@ mod tests {
         let mut interp = Interpreter::new()
             .with_module(mod_instance);
             
-        interp.run_function(FunctionAddress(0));
+        interp.run_module_function("fib", FuncIdx(1), &vec![Value::I32(30)]);
+        assert!(false);
     }
 
 }
