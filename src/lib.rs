@@ -174,11 +174,15 @@ impl Memory {
 
 #[derive(Debug, Clone)]
 pub struct Global {
+    mutable: bool,
+    variable_type: elements::ValueType,
+    value: Value,
+    init_code: Vec<elements::Opcode>,
 }
 
 /// A loaded wasm module
 #[derive(Debug, Clone)]
-pub struct ModuleInstance {
+pub struct LoadedModule {
     /// Module name.  Not technically necessary, but handy.
     name: String,
     /// Function type vector
@@ -197,7 +201,7 @@ pub struct ModuleInstance {
     validated: bool,
 }
 
-impl ModuleInstance {
+impl LoadedModule {
     /// Instantiates and initializes a new module.
     /// Does NOT validate or run the start function though!
     fn new(name: &str, module: elements::Module) -> Self {
@@ -301,8 +305,22 @@ impl ModuleInstance {
 
         // Allocate globals
         if let Some(globals) = module.global_section() {
-            println!("Globals: {:?}", globals);
-            unimplemented!();
+            let global_iter = globals.entries().iter()
+                .map(|global| {
+                let global_type = global.global_type().content_type();
+                let mutability = global.global_type().is_mutable();
+                let init_code = Vec::from(global.init_expr().code());
+                Global {
+                    variable_type: global_type,
+                    mutable: mutability,
+                    value: Value::default_from_type(global_type),
+                    // TODO: The init_code must be zero or more `const` instructions
+                    // followed by `end`
+                    // See https://webassembly.github.io/spec/core/syntax/modules.html#syntax-global
+                    init_code: init_code,
+                }
+            });
+            m.globals.extend(global_iter);
         }
 
         // Allocate imports
@@ -336,15 +354,83 @@ impl ModuleInstance {
 
 /// A wasm program consisting of multiple modules that
 /// have been loaded, validated and are ready to execute.
+// #[derive(Debug, Clone)]
+// pub struct Program {
+//     modules: Vec<LoadedModule>,
+// }
+
+// impl Program {
+//     fn new() -> Self {
+//         Self {
+//             modules: Vec::new(),
+//         }
+//     }
+
+//     /// Builder function to add a loaded and validated module to the
+//     /// program.
+//     ///
+//     /// Essentially, this does the dynamic linking, and should cause
+//     /// errors to happen if there are invalid/dangling references.
+//     /// So, you have to load all the modules in order of dependencies.
+//     ///
+//     /// We could load all the modules in arbitrary order, then validate+link
+//     /// them at the end, but meh.
+//     fn with_module(mut self, module: LoadedModule) -> Self {
+//         assert!(module.validated);
+//         self.modules.push(module);
+//         self
+//     }
+// }
+
+
+
+/// An interpreter which runs a particular program.
+///
+/// Per the wasm spec, this contains the **Store**; you can
+/// have a validated program that is ready to run, but this
+/// has all the runtime state and such from it.
+///
+/// The WASM spec has a not-immediately-obvious gap in semantics
+/// between the environment in which programs are defined, loaded
+/// and validated, where all references are *purely module-local*,
+/// and the environment in which programs are executed, where all
+/// references are *global*; modules are loaded and all their resources
+/// are just shoved
+/// into the Store.  It distinguishes these environments by using the
+/// term "index" to mean an offset into a module-local environment,
+/// and "address" to mean an offset into a global environment.
+/// See <https://webassembly.github.io/spec/core/exec/runtime.html>
+///
+/// A module then becomes a **module instance** when ready to execute,
+/// which ceases to be a collection of data and becomes a collection
+/// of index-to-address mappings.  A **function instance** then is 
+/// the original function definition, plus the a reference to the
+/// module instance to allow it to resolve its indices to addresses.
 #[derive(Debug, Clone)]
-pub struct Program {
-    modules: Vec<ModuleInstance>,
+pub struct Interpreter {
+    value_stack: Vec<parity_wasm::RuntimeValue>,
+    funcs: Vec<Func>,
+    tables: Vec<Table>,
+    mems: Vec<Memory>,
+    globals: Vec<Global>,
+    modules: Vec<LoadedModule>,
 }
 
-impl Program {
+/// Function address types
+struct FunctionAddress(usize);
+struct TableAddress(usize);
+struct MemoryAddress(usize);
+struct GlobalAddress(usize);
+
+impl Interpreter {
     fn new() -> Self {
         Self {
-            modules: Vec::new(),
+            value_stack: vec![],
+            funcs: vec![],
+            tables: vec![],
+            mems: vec![],
+            globals: vec![],
+            modules: vec![],
         }
     }
 
@@ -357,27 +443,23 @@ impl Program {
     ///
     /// We could load all the modules in arbitrary order, then validate+link
     /// them at the end, but meh.
-    fn with_module(mut self, module: ModuleInstance) -> Self {
+    fn with_module(mut self, module: LoadedModule
+) -> Self {
         assert!(module.validated);
         self.modules.push(module);
         self
     }
-}
 
+    fn trap() {
+        panic!("Trap occured!  Aieee!")
+    }
 
-
-/// An interpreter which runs a particular program.
-#[derive(Debug, Clone)]
-pub struct Interpreter {
-    value_stack: Vec<parity_wasm::RuntimeValue>,
-    program: Program,
-}
-
-impl Interpreter {
-    fn new(program: Program) -> Self {
-        Self {
-            value_stack: vec![],
-            program: program,
+    fn run_function(&mut self, func: FunctionAddress) {
+        let function = self.funcs.get(func.0)
+            .expect("Invalid function address, should never happen");
+        let mut locals = function.locals.clone();
+        for op in &function.body {
+            println!("Op is {:?}", op);
         }
     }
 }
@@ -393,8 +475,9 @@ mod tests {
     fn test_validate_failure() {
         let input_file = "test_programs/inc.wasm";
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = ModuleInstance::new("inc", module);
-        let program = Program::new()
+        let mut mod_instance = LoadedModule
+    ::new("inc", module);
+        let interp = Interpreter::new()
             .with_module(mod_instance);
     }
     
@@ -402,26 +485,39 @@ mod tests {
     fn test_create() {
         let input_file = "test_programs/inc.wasm";
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = ModuleInstance::new("inc", module);
+        let mut mod_instance = LoadedModule
+    ::new("inc", module);
         mod_instance.validate();
-        let program = Program::new()
+        let interp = Interpreter::new()
             .with_module(mod_instance);
-        println!("{:#?}", program);
-        let interpreter = Interpreter::new(program);
-        assert!(false);
+        println!("{:#?}", interp);
+        // assert!(false);
     }
 
     #[test]
     fn test_create_fib() {
         let input_file = "test_programs/fib.wasm";
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = ModuleInstance::new("fib", module);
+        let mut mod_instance = LoadedModule
+    ::new("fib", module);
         mod_instance.validate();
-        let program = Program::new()
+        let interp = Interpreter::new()
             .with_module(mod_instance);
-        println!("{:#?}", program);
-        let interpreter = Interpreter::new(program);
-        assert!(false);
+        println!("{:#?}", interp);
+        // assert!(false);
+    }
+
+    #[test]
+    fn test_run_fib() {
+        let input_file = "test_programs/fib.wasm";
+        let module = parity_wasm::deserialize_file(input_file).unwrap();
+        let mut mod_instance = LoadedModule
+    ::new("fib", module);
+        mod_instance.validate();
+        let mut interp = Interpreter::new()
+            .with_module(mod_instance);
+            
+        interp.run_function(FunctionAddress(0));
     }
 
 }

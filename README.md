@@ -19,6 +19,11 @@ The road map is, more or less in order:
  * JIT???
  * Load custom modules written in Rust or C as DLL's???
 
+# Non-goals
+
+ * Run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) it's little-endian.
+
+
 # Building programs
 
 Fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like assemblers.
