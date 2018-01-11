@@ -179,6 +179,8 @@ pub struct Global {
 /// A loaded wasm module
 #[derive(Debug, Clone)]
 pub struct ModuleInstance {
+    /// Module name.  Not technically necessary, but handy.
+    name: String,
     /// Function type vector
     types: Vec<FuncType>,
     /// Function value vector
@@ -198,10 +200,11 @@ pub struct ModuleInstance {
 impl ModuleInstance {
     /// Instantiates and initializes a new module.
     /// Does NOT validate or run the start function though!
-    fn new(module: elements::Module) -> Self {
+    fn new(name: &str, module: elements::Module) -> Self {
         assert_eq!(module.version(), 1);
 
         let mut m = Self {
+            name: name.to_owned(),
             types: vec![],
             funcs: vec![],
             start: None,
@@ -296,15 +299,22 @@ impl ModuleInstance {
             }
         }
 
+        // Allocate globals
+        if let Some(globals) = module.global_section() {
+            println!("Globals: {:?}", globals);
+            unimplemented!();
+        }
 
         // Allocate imports
         if let Some(imports) = module.import_section() {
             println!("Imports: {:?}", imports);
+            unimplemented!();
         }
 
         // Allocate exports
         if let Some(exports) = module.export_section() {
             println!("Exports: {:?}", exports);
+            unimplemented!();
         }
 
         // Check for start section
@@ -328,13 +338,13 @@ impl ModuleInstance {
 /// have been loaded, validated and are ready to execute.
 #[derive(Debug, Clone)]
 pub struct Program {
-    modules: HashMap<String, ModuleInstance>,
+    modules: Vec<ModuleInstance>,
 }
 
 impl Program {
     fn new() -> Self {
         Self {
-            modules: HashMap::new(),
+            modules: Vec::new(),
         }
     }
 
@@ -347,9 +357,9 @@ impl Program {
     ///
     /// We could load all the modules in arbitrary order, then validate+link
     /// them at the end, but meh.
-    fn with_module(mut self, name: &str, module: ModuleInstance) -> Self {
+    fn with_module(mut self, module: ModuleInstance) -> Self {
         assert!(module.validated);
-        self.modules.insert(name.to_owned(), module);
+        self.modules.push(module);
         self
     }
 }
@@ -383,21 +393,35 @@ mod tests {
     fn test_validate_failure() {
         let input_file = "test_programs/inc.wasm";
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = ModuleInstance::new(module);
+        let mut mod_instance = ModuleInstance::new("inc", module);
         let program = Program::new()
-            .with_module("inc", mod_instance);
+            .with_module(mod_instance);
     }
     
     #[test]
     fn test_create() {
         let input_file = "test_programs/inc.wasm";
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = ModuleInstance::new(module);
+        let mut mod_instance = ModuleInstance::new("inc", module);
         mod_instance.validate();
         let program = Program::new()
-            .with_module("inc", mod_instance);
+            .with_module(mod_instance);
         println!("{:#?}", program);
         let interpreter = Interpreter::new(program);
         assert!(false);
     }
+
+    #[test]
+    fn test_create_fib() {
+        let input_file = "test_programs/fib.wasm";
+        let module = parity_wasm::deserialize_file(input_file).unwrap();
+        let mut mod_instance = ModuleInstance::new("fib", module);
+        mod_instance.validate();
+        let program = Program::new()
+            .with_module(mod_instance);
+        println!("{:#?}", program);
+        let interpreter = Interpreter::new(program);
+        assert!(false);
+    }
+
 }
