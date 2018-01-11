@@ -63,32 +63,48 @@ impl Value {
 }
 
 
-/// Memory for a variable.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct VariableSlot {
-    variable_type: elements::ValueType,
-    value: Value,
-}
+// /// Memory for a variable.
+// #[derive(Debug, Copy, Clone, PartialEq)]
+// pub struct VariableSlot {
+//     variable_type: elements::ValueType,
+//     value: Value,
+// }
 
-impl VariableSlot {
-    /// Takes a slice of `Local`'s (local variable *specifications*),
-    /// and creates a vec of `VariableSlot`'s matching them.
-    fn from_locals(locals: &[elements::Local]) -> Vec<VariableSlot> {
-        let num_local_slots = locals.iter()
-            .map(|x| x.count() as usize)
-            .sum();
-        let mut v = Vec::with_capacity(num_local_slots);
-        for local in locals {
-            for i in 0..local.count() {
-                let slot = VariableSlot {
-                    variable_type: local.value_type(),
-                    value: Value::default_from_type(local.value_type()),
-                };
-                v.push(slot);
-            }
+// impl VariableSlot {
+//     /// Takes a slice of `Local`'s (local variable *specifications*),
+//     /// and creates a vec of `VariableSlot`'s matching them.
+//     fn from_locals(locals: &[elements::Local]) -> Vec<VariableSlot> {
+//         let num_local_slots = locals.iter()
+//             .map(|x| x.count() as usize)
+//             .sum();
+//         let mut v = Vec::with_capacity(num_local_slots);
+//         for local in locals {
+//             for i in 0..local.count() {
+//                 let slot = VariableSlot {
+//                     variable_type: local.value_type(),
+//                     value: Value::default_from_type(local.value_type()),
+//                 };
+//                 v.push(slot);
+//             }
+//         }
+//         v
+//     }
+// }
+
+/// Takes a slice of `Local`'s (local variable *specifications*),
+/// and creates a vec of their types.
+fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
+    let num_local_slots = locals.iter()
+        .map(|x| x.count() as usize)
+        .sum();
+    let mut v = Vec::with_capacity(num_local_slots);
+    for local in locals {
+        for i in 0..local.count() {
+            let t = local.value_type();
+            v.push(t);
         }
-        v
     }
+    v
 }
 
 /// An index into a module's `function` vector.
@@ -99,7 +115,7 @@ pub struct FuncIdx(usize);
 #[derive(Debug, Clone)]
 pub struct Func {
     typeidx: TypeIdx,
-    locals: Vec<VariableSlot>,
+    locals: Vec<elements::ValueType>,
     body: Vec<elements::Opcode>,
 }
 
@@ -249,7 +265,7 @@ impl LoadedModule {
                     
                     Func {
                         typeidx: TypeIdx(type_idx),
-                        locals: VariableSlot::from_locals(c.locals()),
+                        locals: types_from_locals(c.locals()),
                         body: c.code().elements().to_owned(),
                     }
                 });
@@ -383,14 +399,12 @@ impl LoadedModule {
 // }
 
 
-/// The context for an executing function.
+/// The activation record for an executing function.
 #[derive(Debug, Clone, Default)]
 pub struct StackFrame {
     value_stack:  Vec<Value>,
     labels: Vec<usize>,
     locals: Vec<Value>,
-    // This IS an activation record so we don't need
-    // to store those separately.
 }
 
 impl StackFrame {
@@ -414,10 +428,63 @@ impl StackFrame {
             locals: locals,
         }
     }
+
+    fn from_func_instance(func: &FuncInstance, args: &[Value]) -> Self {
+        // Allocate space for locals+params
+        let mut locals = Vec::with_capacity(func.locals.len() + func.functype.params.len());
+        assert_eq!(func.functype.params.len(), args.len(), "Tried to create stack frame for func with different number of parameters than the type says it takes!");
+
+        // Push params
+        locals.extend(args.into_iter());
+        // Fill remaining space with 0's
+        let iter = func.functype.params.iter()
+            .map(|t| Value::default_from_type(*t));
+        locals.extend(iter);
+
+        Self {
+            value_stack: vec![],
+            labels: vec![],
+            locals: locals,
+        }
+    }
 }
+
+
+/// Function address type; refers to a particular `FuncInstance` in the Store.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct FunctionAddress(usize);
+/// Table address type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct TableAddress(usize);
+/// Memory address type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct MemoryAddress(usize);
+/// Global address type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct GlobalAddress(usize);
+/// Module instance address type
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ModuleAddress(usize);
+
+
+/// Contains all the information needed to execute a function.
+#[derive(Debug, Clone)]
+pub struct FuncInstance {
+    functype: FuncType,
+    locals: Vec<elements::ValueType>,
+    body: Vec<elements::Opcode>,
+    module: ModuleAddress,
+}
+
+/// Relates all the local indices to globals, functions etc.
+/// from within a module to the global addresses of the Store.
 #[derive(Debug, Clone)]
 pub struct ModuleInstance {
-
+    functions: Vec<FunctionAddress>,
+    table: Option<TableAddress>,
+    memory: Option<MemoryAddress>,
+    globals: Vec<GlobalAddress>,
+    // TODO: Start function!
 }
 
 /// An interpreter which runs a particular program.
@@ -445,7 +512,7 @@ pub struct ModuleInstance {
 #[derive(Debug, Clone)]
 pub struct Interpreter {
     stack: Vec<StackFrame>,
-    funcs: Vec<Func>,
+    funcs: Vec<FuncInstance>,
     tables: Vec<Table>,
     mems: Vec<Memory>,
     globals: Vec<Global>,
@@ -453,12 +520,6 @@ pub struct Interpreter {
     modules: HashMap<String, LoadedModule>,
 }
 
-
-/// Function address types
-struct FunctionAddress(usize);
-struct TableAddress(usize);
-struct MemoryAddress(usize);
-struct GlobalAddress(usize);
 
 impl Interpreter {
     fn new() -> Self {
@@ -485,7 +546,32 @@ impl Interpreter {
     fn with_module(mut self, module: LoadedModule
 ) -> Self {
         assert!(module.validated);
+        let module_instance_address = ModuleAddress(self.module_instances.len());
+        let mut functions = vec![];
+        let table = None;
+        let memory = None;
+        let globals = vec![];
+        for func in module.funcs.iter() {
+            let address = FunctionAddress(self.funcs.len());
+            let functype = module.types[func.typeidx.0].clone(); 
+            let instance = FuncInstance {
+                functype: functype,
+                locals: func.locals.clone(),
+                body: func.body.clone(),
+                module: module_instance_address,
+            };
+            println!("Function: {:?}", instance);
+            self.funcs.push(instance);
+            functions.push(address);
+        }
+        let inst = ModuleInstance {
+            functions,
+            table,
+            memory,
+            globals,
+        };
         self.modules.insert(module.name.to_owned(), module);
+        self.module_instances.push(inst);
         self
     }
 
@@ -502,28 +588,32 @@ impl Interpreter {
     }
 
 
-    fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
+    // fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
+    //     // let function = self.funcs.get(func.0)
+    //     //     .expect("Invalid function address, should never happen");
+    //     let function = &self.modules[module].funcs[1];
+    //     let func_type = &self.modules[module].types[function.typeidx.0];
+    //     let frame = StackFrame::from_func(function, &func_type, args);
+    //     println!("Frame is {:?}", frame);
+    //     self.stack.push(frame);
+    //     for op in &function.body {
+    //         println!("Op is {:?}", op);
+    //     }
+    //     self.stack.pop();
+    // }
+
+    fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
         // let function = self.funcs.get(func.0)
         //     .expect("Invalid function address, should never happen");
-        let function = &self.modules[module].funcs[1];
-        let func_type = &self.modules[module].types[function.typeidx.0];
-        let frame = StackFrame::from_func(function, &func_type, args);
+        let function = &self.funcs[func.0];
+        let frame = StackFrame::from_func_instance(function, args);
         println!("Frame is {:?}", frame);
+
         self.stack.push(frame);
         for op in &function.body {
             println!("Op is {:?}", op);
         }
         self.stack.pop();
-    }
-
-    fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
-        // let function = self.funcs.get(func.0)
-        //     .expect("Invalid function address, should never happen");
-        let function = &self.funcs[0];
-
-        for op in &function.body {
-            println!("Op is {:?}", op);
-        }
     }
 }
 
@@ -580,7 +670,8 @@ mod tests {
         let mut interp = Interpreter::new()
             .with_module(mod_instance);
             
-        interp.run_module_function("fib", FuncIdx(1), &vec![Value::I32(30)]);
+        // interp.run_module_function("fib", FuncIdx(1), &vec![Value::I32(30)]);
+        interp.run_function(FunctionAddress(1), &vec![Value::I32(30)]);
         assert!(false);
     }
 
