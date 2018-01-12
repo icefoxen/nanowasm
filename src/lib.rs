@@ -75,6 +75,43 @@ impl Value {
     }
 }
 
+impl From<Value> for i32 {    
+    fn from(vl: Value) -> i32 {
+        match vl {
+            Value::I32(i) => i,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
+impl From<Value> for i64 {
+    fn from(vl: Value) -> i64 {
+        match vl {
+            Value::I64(i) => i,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
+impl From<Value> for f32 {    
+    fn from(vl: Value) -> f32 {
+        match vl {
+            Value::F32(i) => i,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
+impl From<Value> for f64 {    
+    fn from(vl: Value) -> f64 {
+        match vl {
+            Value::F64(i) => i,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+
+}
+
 // parity-wasm is hard to understand but does have some
 // pretty nice ideas.
 
@@ -439,12 +476,17 @@ impl LoadedModule {
 //     }
 // }
 
+/// A label to a particular block: just an instruction index.
+/// The label index is implicit in the labels stack; label 0 is always
+/// the top of the stack.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct BlockLabel(usize);
 
 /// The activation record for an executing function.
 #[derive(Debug, Clone, Default)]
 pub struct StackFrame {
     value_stack:  Vec<Value>,
-    labels: Vec<usize>,
+    labels: Vec<BlockLabel>,
     locals: Vec<Value>,
     /// Where in the current function execution is.
     ip: usize,
@@ -493,6 +535,24 @@ impl StackFrame {
         }
     }
 
+    /// Push a new BlockLabel to the label stack.
+    fn push_label(&mut self, ip: BlockLabel) {
+        self.labels.push(ip);
+    }
+
+    /// Pops to the given label index and returns
+    /// the BlockLabel of the destination instruction index.
+    /// Passing it 0 jumps to the first containing label, etc.
+    ///
+    /// Panics if an invalid/too large index is given.
+    fn pop_label(&mut self, label_idx: usize) -> BlockLabel {
+        let i = 0;
+        while i < label_idx {
+            self.labels.pop();
+        }
+        self.labels.pop().unwrap()
+    }
+
     /// Get a local variable in the stack frame by index.
     /// Panics if out of bounds.
     fn get_local(&mut self, idx: usize) -> Value {
@@ -516,6 +576,16 @@ impl StackFrame {
         assert!(!self.value_stack.is_empty());
         self.value_stack.pop()
             .unwrap()
+    }
+
+    /// Pops the top of the value_stack and returns the value as a number.
+    ///
+    /// Panics if the stack is empty or the Value is not the right
+    /// numeric type.
+    fn pop_as<T>(&mut self) -> T
+        where T: From<Value>
+    {
+        self.pop().into()
     }
 
     /// Pushes the given value to the top of the value_stack.
@@ -551,7 +621,6 @@ struct GlobalAddress(usize);
 /// Module instance address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ModuleAddress(usize);
-
 
 /// Contains all the information needed to execute a function.
 #[derive(Debug, Clone)]
@@ -770,6 +839,9 @@ impl Interpreter {
         use elements::Opcode::*;
         use std::usize;
         loop {
+            if frame.ip == func.body.len() {
+                break
+            }
             let op = &func.body[frame.ip];
 
             println!("Op: {:?}", op);
@@ -777,13 +849,42 @@ impl Interpreter {
                 Unreachable => unreachable!(),
                 Nop => (),
                 Block(blocktype) => (),
-                Loop(blocktype) => (),
-                If(blocktype) => (),
+                Loop(blocktype) => {
+                    // Instruction index to jump to on branch or such.
+                    let end_idx = frame.ip + 1;
+                    frame.push_label(BlockLabel(end_idx));
+                },
+                If(blocktype) => {
+                },
                 Else => (),
-                End => break,
-                Br(i) => (),
-                BrIf(i) => (),
-                BrTable(ref v, i) => (),
+                End => (),
+                Br(i) => {
+                    let target_ip = frame.pop_label(i as usize);
+                    frame.ip = target_ip.0;
+                },
+                BrIf(i) => {
+                    let i = i as usize;
+                    let vl = frame.pop_as::<i32>();
+                    if vl != 0 {
+                        let target_ip = frame.pop_label(i);
+                        frame.ip = target_ip.0;
+                    }
+                },
+                BrTable(ref v, i) => {
+                    // TODO: Double-check this is correct, I don't fully
+                    // understand its goals.  It's a computed jump into
+                    // a list of labels, but, needs verification.
+                    let i = i as usize;
+                    let vl = frame.pop_as::<i32>() as usize;
+                    let target_label = if vl < v.len() {
+                        v[vl] as usize
+                    } else {
+                        i
+                    };
+                    let target_ip = frame.pop_label(target_label);
+                    frame.ip = target_ip.0;
+
+                },
                 Return => (),
                 Call(i) => {
                     let i = i as usize;
@@ -1011,6 +1112,8 @@ impl Interpreter {
             frame.ip += 1;
         }
         // Return the function's return value (if any).
+        // TODO: We should check that the value matches the function's stated
+        // type and arity?
         frame.value_stack.last().cloned()
     }
 
