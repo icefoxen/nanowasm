@@ -7,6 +7,9 @@ use parity_wasm::elements;
 
 use std::collections::HashMap;
 
+#[cfg(test)]
+mod tests;
+
 
 /// A type signature for a function type, intended to
 /// go into the `types` section of a module.
@@ -71,6 +74,34 @@ impl Value {
         }
     }
 }
+
+// parity-wasm is hard to understand but does have some
+// pretty nice ideas.
+
+impl From<i32> for Value {
+    fn from(num: i32) -> Self {
+        Value::I32(num)
+    }
+}
+
+impl From<i64> for Value {
+    fn from(num: i64) -> Self {
+        Value::I64(num)
+    }
+}
+
+impl From<f32> for Value {
+    fn from(num: f32) -> Self {
+        Value::F32(num)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(num: f64) -> Self {
+        Value::F64(num)
+    }
+}
+
 
 
 // /// Memory for a variable.
@@ -517,6 +548,16 @@ pub struct ModuleInstance {
     // TODO: Start function!
 }
 
+/// Basically all the *mutable* parts
+/// of the interpreter state.
+#[derive(Debug, Clone)]
+pub struct Store {
+    stack: Vec<StackFrame>,
+    tables: Vec<Table>,
+    mems: Vec<Memory>,
+    globals: Vec<Global>,
+}
+
 /// An interpreter which runs a particular program.
 ///
 /// Per the wasm spec, this contains the **Store**; you can
@@ -695,9 +736,13 @@ impl Interpreter {
                 BrIf(i) => (),
                 BrTable(ref v, i) => (),
                 Return => (),
-                Call(i) => (),
+                Call(i) => Interpreter::exec_call(self, i),
                 CallIndirect(i, b) => (),
-                Drop => (),
+                Drop => {
+                    assert!(!frame.value_stack.is_empty());
+                    frame.value_stack.pop();
+
+                },
                 Select => (),
                 GetLocal(i) => {
                     let i = i as usize;
@@ -769,10 +814,24 @@ impl Interpreter {
                 I64Store32(i1, i2) => (),
                 CurrentMemory(b) => (),
                 GrowMemory(b) => (),
-                I32Const(i) => (),
-                I64Const(l) => (),
-                F32Const(i) => (),
-                F64Const(l) => (),
+                I32Const(i) => Interpreter::exec_const(frame, i.into()),
+                I64Const(l) => Interpreter::exec_const(frame, l.into()),
+                // Why oh why are these represented as u32 and u64?
+                // Because this is the serialized representation, sigh.
+                // TODO: Fix this somehow so we don't have to keep encoding/
+                // decoding floats but just check them once?
+                // BUGGO: This is technically incorrect because a signaling NaN
+                // *may* slip through from_bits(), and WebAssembly currently
+                // does not support signaling NaN's.
+                // See https://webassembly.github.io/spec/core/exec/numerics.html#floating-point-operations
+                F32Const(i) => {
+                    use std::f32;
+                    Interpreter::exec_const(frame, Value::from(f32::from_bits(i)))
+                }
+                F64Const(l) => {
+                    use std::f64;
+                    Interpreter::exec_const(frame, Value::from(f64::from_bits(l)))
+                },
                 I32Eqz => (),
                 I32Eq => (),
                 I32Ne => (),
@@ -899,10 +958,6 @@ impl Interpreter {
             }
             frame.ip += 1;
         }
-
-        fn exec_const(frame: &mut StackFrame, vl: Value) {
-            
-        }
     }
 
     fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
@@ -913,64 +968,13 @@ impl Interpreter {
         self.exec(func);
         self.stack.pop();
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use parity_wasm;
-    use super::*;
-
-    /// Make sure that adding a non-validated module to a program fails.
-    #[test]
-    #[should_panic]
-    fn test_validate_failure() {
-        let input_file = "test_programs/inc.wasm";
-        let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = LoadedModule
-    ::new("inc", module);
-        let interp = Interpreter::new()
-            .with_module(mod_instance);
-    }
-    
-    #[test]
-    fn test_create() {
-        let input_file = "test_programs/inc.wasm";
-        let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = LoadedModule
-    ::new("inc", module);
-        mod_instance.validate();
-        let interp = Interpreter::new()
-            .with_module(mod_instance);
-        println!("{:#?}", interp);
-        // assert!(false);
+    fn exec_const(frame: &mut StackFrame, vl: Value) {
+        frame.value_stack.push(vl);
     }
 
-    #[test]
-    fn test_create_fib() {
-        let input_file = "test_programs/fib.wasm";
-        let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = LoadedModule
-    ::new("fib", module);
-        mod_instance.validate();
-        let interp = Interpreter::new()
-            .with_module(mod_instance);
-        println!("{:#?}", interp);
-        // assert!(false);
-    }
-
-    #[test]
-    fn test_run_fib() {
-        let input_file = "test_programs/fib.wasm";
-        let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let mut mod_instance = LoadedModule
-    ::new("fib", module);
-        mod_instance.validate();
-        let mut interp = Interpreter::new()
-            .with_module(mod_instance);
-            
-        // interp.run_module_function("fib", FuncIdx(1), &vec![Value::I32(30)]);
-        interp.run_function(FunctionAddress(1), &vec![Value::I32(30)]);
-        assert!(false);
+    fn exec_call(&mut self, i: u32) {
     }
 
 }
+
