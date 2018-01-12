@@ -564,9 +564,20 @@ impl Interpreter {
         }
     }
 
+
+    /// Returns a GlobalAddress from a given index
+    fn resolve_global(&self, module_addr: ModuleAddress, idx: usize) -> GlobalAddress {
+        assert!(module_addr.0 < self.module_instances.len());
+        let module_instance = &self.module_instances[module_addr.0];
+        assert!(idx < module_instance.globals.len());
+        module_instance.globals[idx]
+    }
+
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
+    ///
+    /// This is unused since it creates irritating double-borrows.
     fn get_global(&self, module_addr: ModuleAddress, idx: usize) -> Value {
         assert!(module_addr.0 < self.module_instances.len());
         let module_instance = &self.module_instances[module_addr.0];
@@ -579,6 +590,8 @@ impl Interpreter {
     /// address to look up the global variable's address.
     /// Panics if out of bounds or if the type of the new
     /// variable does not match the old one(?).
+    ///
+    /// This is unused since it creates irritating double-borrows.
     fn set_global(&mut self, module_addr: ModuleAddress, idx: usize, vl: Value) {
         assert!(module_addr.0 < self.module_instances.len());
         let module_instance = &self.module_instances[module_addr.0];
@@ -710,9 +723,27 @@ impl Interpreter {
                     assert!(!frame.value_stack.is_empty());
                     let vl = frame.value_stack.pop()
                         .unwrap();
-                    let vl = self.get_global(func.module, i);
+                    assert!(func.module.0 < self.module_instances.len());
+                    let module_instance = &self.module_instances[func.module.0];
+                    assert!(i < module_instance.globals.len());
+                    let global_addr = module_instance.globals[i];
+                    let vl = self.globals[global_addr.0].value;
+                    frame.value_stack.push(vl);
                 },
-                SetGlobal(i) => (),
+                SetGlobal(i) => {
+                    let i = i as usize;
+                    assert!(!frame.value_stack.is_empty());
+                    let vl = frame.value_stack.pop()
+                        .unwrap();
+                    assert!(func.module.0 < self.module_instances.len());
+                    let module_instance = &self.module_instances[func.module.0];
+                    assert!(i < module_instance.globals.len());
+                    let global_addr = module_instance.globals[i];
+                    
+                    assert!(self.globals[global_addr.0].mutable);
+                    assert_eq!(self.globals[global_addr.0].variable_type, vl.get_type());
+                    self.globals[global_addr.0].value = vl;
+                },
                 I32Load(i1, i2) => (),
                 I64Load(i1, i2) => (),
                 F32Load(i1, i2) => (),
@@ -867,6 +898,10 @@ impl Interpreter {
                 F64ReinterpretI64 => (),
             }
             frame.ip += 1;
+        }
+
+        fn exec_const(frame: &mut StackFrame, vl: Value) {
+            
         }
     }
 
