@@ -49,8 +49,7 @@
         let mut interp = Interpreter::new()
             .with_module(mod_instance);
             
-        // interp.run_module_function("fib", FuncIdx(1), &vec![Value::I32(30)]);
-        interp.run_function(FunctionAddress(1), &vec![Value::I32(30)]);
+        interp.run(FunctionAddress(1), &vec![Value::I32(30)]);
         assert!(false);
     }
 

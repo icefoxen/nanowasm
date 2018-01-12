@@ -580,10 +580,25 @@ pub struct ModuleInstance {
 /// Also see: `State`.
 #[derive(Debug, Clone, Default)]
 pub struct Store {
-    stack: Vec<StackFrame>,
     tables: Vec<Table>,
     mems: Vec<Memory>,
     globals: Vec<Global>,
+    // stack: Vec<StackFrame>,
+    // We don't have explicit StackFrame's in the Store for Reasons.
+    // Borrowing reasons.  Namely, a function needs
+    // a mut reference to its StackFrame, naturally.
+    // but it also has to be able to push new StackFrame's
+    // to the stack when a new function is called, and so
+    // will mutate the vec it has a reference
+    // into.  *We* know that it will never do anything
+    // to invalidate its own StackFrame, but Rust doesn't.
+    // So instead we basically just use Rust's stack and
+    // have each wasm `Call` instruction allocate a new
+    // StackFrame and pass it to the thing it's calling.
+    // I feel like this may cause problems with potential
+    // threading applications somewhere down the line
+    // (see Python), but for now oh well.
+    // Trivially gotten around with unsafe, if we want to.
 }
 
 /// All the *immutable* parts of the interpreter state.
@@ -640,6 +655,15 @@ impl Interpreter {
         assert!(idx < module_instance.globals.len());
         module_instance.globals[idx]
     }
+
+    /// Returns a FunctionAddress from a given index
+    fn resolve_function(state: &State, module_addr: ModuleAddress, idx: usize) -> FunctionAddress {
+        assert!(module_addr.0 < state.module_instances.len());
+        let module_instance = &state.module_instances[module_addr.0];
+        assert!(idx < module_instance.functions.len());
+        module_instance.functions[idx]
+    }
+
     
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
@@ -691,6 +715,8 @@ impl Interpreter {
             self.state.funcs.push(instance);
             functions.push(address);
         }
+        // TODO: table, memory, globals
+        // all also need to come from the module!
         let inst = ModuleInstance {
             functions,
             table,
@@ -731,12 +757,16 @@ impl Interpreter {
     //     self.stack.pop();
     // }
 
+    fn exec_const(frame: &mut StackFrame, vl: Value) {
+        frame.push(vl);
+    }
+
     /// Actually do the interpretation of the given function, assuming
     /// that a stack frame already exists for it with args and locals 
     /// and such
-    fn exec(&mut self, func: FunctionAddress) {
-        let func = &self.state.funcs[func.0];
-        let frame = self.store.stack.last_mut().expect("No stack frame, should be impossible");
+    fn exec(store: &mut Store, state: &State, func: FunctionAddress, args: &[Value]) -> Option<Value> {
+        let func = &state.funcs[func.0];
+        let frame = &mut StackFrame::from_func_instance(func, args);
         use elements::Opcode::*;
         use std::usize;
         loop {
@@ -755,7 +785,31 @@ impl Interpreter {
                 BrIf(i) => (),
                 BrTable(ref v, i) => (),
                 Return => (),
-                Call(i) => (), //Interpreter::exec_call(self, i),
+                Call(i) => {
+                    let i = i as usize;
+                    let function_addr = Interpreter::resolve_function(state, func.module, i);
+                    // Typecheck and get appropriate arguments off the stack to pass
+                    // to the called function.
+                    let f = &state.funcs[function_addr.0];
+                    let return_val = {
+                        assert!(f.functype.params.len() <= frame.value_stack.len());
+                        let params_end = frame.value_stack.len() - 1;
+                        let params_start = params_end - f.functype.params.len();
+                        let params_slice = &frame.value_stack[params_start..params_end];
+                        for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
+                            assert_eq!(param.get_type(), *desired_type);
+                        }
+                        Interpreter::exec(store, state, function_addr, params_slice)
+                    };
+
+                    // Great, now check that the return value matches the stated
+                    // return type, and push it to the values stack.
+                    let return_type = return_val.map(|v| v.get_type());
+                    assert_eq!(return_type, f.functype.return_type);
+                    if let Some(v) = return_val {
+                        frame.value_stack.push(v);
+                    }
+                }
                 CallIndirect(i, b) => (),
                 Drop => {
                     frame.pop();
@@ -778,13 +832,13 @@ impl Interpreter {
                 },
                 GetGlobal(i) => {
                     let i = i as usize;
-                    let vl = Interpreter::get_global(&self.store.globals, &self.state, func.module, i);
+                    let vl = Interpreter::get_global(&store.globals, &state, func.module, i);
                     frame.push(vl);
                 },
                 SetGlobal(i) => {
                     let i = i as usize;
                     let vl = frame.pop();
-                    Interpreter::set_global(&mut self.store.globals, &self.state, func.module, i, vl);
+                    Interpreter::set_global(&mut store.globals, &state, func.module, i, vl);
                 },
                 I32Load(i1, i2) => (),
                 I64Load(i1, i2) => (),
@@ -956,23 +1010,15 @@ impl Interpreter {
             }
             frame.ip += 1;
         }
+        // Return the function's return value (if any).
+        frame.value_stack.last().cloned()
     }
 
-    fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
-        let frame = StackFrame::from_func_instance(&self.state.funcs[func.0], args);
-        println!("Frame is {:?}", frame);
-
-        self.store.stack.push(frame);
-        self.exec(func);
-        self.store.stack.pop();
+    /// A nice shortcut to run `exec()` with appropriate values.
+    fn run(&mut self, func: FunctionAddress, args: &[Value]) {
+        let state = &self.state;
+        let store = &mut self.store;
+        Interpreter::exec(store, state, func, args);
     }
-
-    fn exec_const(frame: &mut StackFrame, vl: Value) {
-        frame.value_stack.push(vl);
-    }
-
-    fn exec_call(&mut self, i: u32) {
-    }
-
 }
 
