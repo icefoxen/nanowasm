@@ -508,6 +508,31 @@ impl StackFrame {
         assert_eq!(self.locals[idx].get_type(), vl.get_type());
         self.locals[idx] = vl;
     }
+
+    /// Pop the top of the value_stack and returns the value.
+    ///
+    /// Panics if the stack is empty.
+    fn pop(&mut self) -> Value {
+        assert!(!self.value_stack.is_empty());
+        self.value_stack.pop()
+            .unwrap()
+    }
+
+    /// Pushes the given value to the top of the value_stack.
+    /// Basically just for symmetry with `pop()`.
+    fn push(&mut self, vl: Value) {
+        self.value_stack.push(vl)
+    }
+
+    /// Returns the value from the top of the value_stack
+    /// without altering the stack.
+    ///
+    /// Panics if the stack is empty.
+    fn peek(&self) -> Value {
+        assert!(!self.value_stack.is_empty());
+        *self.value_stack.last()
+            .unwrap()
+    }
 }
 
 
@@ -548,14 +573,27 @@ pub struct ModuleInstance {
     // TODO: Start function!
 }
 
-/// Basically all the *mutable* parts
-/// of the interpreter state.
-#[derive(Debug, Clone)]
+/// All the *mutable* parts of the interpreter state.
+/// This slightly wacky structure helps keep borrows from
+/// being awful, a little bit.
+///
+/// Also see: `State`.
+#[derive(Debug, Clone, Default)]
 pub struct Store {
     stack: Vec<StackFrame>,
     tables: Vec<Table>,
     mems: Vec<Memory>,
     globals: Vec<Global>,
+}
+
+/// All the *immutable* parts of the interpreter state.
+///
+/// Also see: `Store`.
+#[derive(Debug, Clone, Default)]
+pub struct State {
+    funcs: Vec<FuncInstance>,
+    module_instances: Vec<ModuleInstance>,
+    modules: HashMap<String, LoadedModule>,
 }
 
 /// An interpreter which runs a particular program.
@@ -582,68 +620,47 @@ pub struct Store {
 /// module instance to allow it to resolve its indices to addresses.
 #[derive(Debug, Clone)]
 pub struct Interpreter {
-    stack: Vec<StackFrame>,
-    funcs: Vec<FuncInstance>,
-    tables: Vec<Table>,
-    mems: Vec<Memory>,
-    globals: Vec<Global>,
-    module_instances: Vec<ModuleInstance>,
-    modules: HashMap<String, LoadedModule>,
+    store: Store,
+    state: State,
 }
 
 
 impl Interpreter {
     fn new() -> Self {
         Self {
-            stack: vec![],
-            funcs: vec![],
-            tables: vec![],
-            mems: vec![],
-            globals: vec![],
-            module_instances: vec![],
-            modules: HashMap::new(),
+            store: Store::default(),
+            state: State::default(),
         }
     }
 
-
     /// Returns a GlobalAddress from a given index
-    fn resolve_global(&self, module_addr: ModuleAddress, idx: usize) -> GlobalAddress {
-        assert!(module_addr.0 < self.module_instances.len());
-        let module_instance = &self.module_instances[module_addr.0];
+    fn resolve_global(state: &State, module_addr: ModuleAddress, idx: usize) -> GlobalAddress {
+        assert!(module_addr.0 < state.module_instances.len());
+        let module_instance = &state.module_instances[module_addr.0];
         assert!(idx < module_instance.globals.len());
         module_instance.globals[idx]
     }
-
+    
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
     ///
     /// This is unused since it creates irritating double-borrows.
-    fn get_global(&self, module_addr: ModuleAddress, idx: usize) -> Value {
-        assert!(module_addr.0 < self.module_instances.len());
-        let module_instance = &self.module_instances[module_addr.0];
-        assert!(idx < module_instance.globals.len());
-        let global_addr = module_instance.globals[idx];
-        self.globals[global_addr.0].value
+    fn get_global(globals: &[Global], state: &State, module_addr: ModuleAddress, idx: usize) -> Value {
+        let global_addr = Interpreter::resolve_global(state, module_addr, idx);
+        globals[global_addr.0].value
     }
-
     /// Sets a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds or if the type of the new
     /// variable does not match the old one(?).
-    ///
-    /// This is unused since it creates irritating double-borrows.
-    fn set_global(&mut self, module_addr: ModuleAddress, idx: usize, vl: Value) {
-        assert!(module_addr.0 < self.module_instances.len());
-        let module_instance = &self.module_instances[module_addr.0];
-        assert!(idx < module_instance.globals.len());
-        let global_addr = module_instance.globals[idx];
-
-        assert!(self.globals[global_addr.0].mutable);
-        assert_eq!(self.globals[global_addr.0].variable_type, vl.get_type());
-        self.globals[global_addr.0].value = vl;
+    fn set_global(globals: &mut [Global], state: &State, module_addr: ModuleAddress, idx: usize, vl: Value) {
+        let global_addr = Interpreter::resolve_global(state, module_addr, idx);
+        assert!(globals[global_addr.0].mutable);
+        assert_eq!(globals[global_addr.0].variable_type, vl.get_type());
+        globals[global_addr.0].value = vl;
     }
-
+    
     /// Builder function to add a loaded and validated module to the
     /// program.
     ///
@@ -656,13 +673,13 @@ impl Interpreter {
     fn with_module(mut self, module: LoadedModule
 ) -> Self {
         assert!(module.validated);
-        let module_instance_address = ModuleAddress(self.module_instances.len());
+        let module_instance_address = ModuleAddress(self.state.module_instances.len());
         let mut functions = vec![];
         let table = None;
         let memory = None;
         let globals = vec![];
         for func in module.funcs.iter() {
-            let address = FunctionAddress(self.funcs.len());
+            let address = FunctionAddress(self.state.funcs.len());
             let functype = module.types[func.typeidx.0].clone(); 
             let instance = FuncInstance {
                 functype: functype,
@@ -671,7 +688,7 @@ impl Interpreter {
                 module: module_instance_address,
             };
             println!("Function: {:?}", instance);
-            self.funcs.push(instance);
+            self.state.funcs.push(instance);
             functions.push(address);
         }
         let inst = ModuleInstance {
@@ -680,8 +697,8 @@ impl Interpreter {
             memory,
             globals,
         };
-        self.modules.insert(module.name.to_owned(), module);
-        self.module_instances.push(inst);
+        self.state.modules.insert(module.name.to_owned(), module);
+        self.state.module_instances.push(inst);
         self
     }
 
@@ -689,6 +706,7 @@ impl Interpreter {
         panic!("Trap occured!  Aieee!")
     }
 
+    /*
     /// Takes a loaded module, pulls it apart, and shoves all its
     /// parts into the interpreter's Store.  Produces a ModuleInstance
     /// which lets you translate indices referring to module resources
@@ -696,6 +714,7 @@ impl Interpreter {
     fn instantiate(&mut self, module: &LoadedModule) {
 
     }
+*/
 
 
     // fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
@@ -716,8 +735,8 @@ impl Interpreter {
     /// that a stack frame already exists for it with args and locals 
     /// and such
     fn exec(&mut self, func: FunctionAddress) {
-        let func = &self.funcs[func.0];
-        let frame = self.stack.last_mut().expect("No stack frame, should be impossible");
+        let func = &self.state.funcs[func.0];
+        let frame = self.store.stack.last_mut().expect("No stack frame, should be impossible");
         use elements::Opcode::*;
         use std::usize;
         loop {
@@ -736,12 +755,10 @@ impl Interpreter {
                 BrIf(i) => (),
                 BrTable(ref v, i) => (),
                 Return => (),
-                Call(i) => Interpreter::exec_call(self, i),
+                Call(i) => (), //Interpreter::exec_call(self, i),
                 CallIndirect(i, b) => (),
                 Drop => {
-                    assert!(!frame.value_stack.is_empty());
-                    frame.value_stack.pop();
-
+                    frame.pop();
                 },
                 Select => (),
                 GetLocal(i) => {
@@ -751,43 +768,23 @@ impl Interpreter {
                 },
                 SetLocal(i) => {
                     let i = i as usize;
-                    assert!(!frame.value_stack.is_empty());
-                    let vl = frame.value_stack.pop()
-                        .unwrap();
+                    let vl = frame.pop();
                     frame.set_local(i, vl);
                 },
                 TeeLocal(i) => {
                     let i = i as usize;
-                    assert!(!frame.value_stack.is_empty());
-                    let vl = *frame.value_stack.last()
-                        .unwrap();
+                    let vl = frame.peek();
                     frame.set_local(i, vl);
                 },
                 GetGlobal(i) => {
                     let i = i as usize;
-                    assert!(!frame.value_stack.is_empty());
-                    let vl = frame.value_stack.pop()
-                        .unwrap();
-                    assert!(func.module.0 < self.module_instances.len());
-                    let module_instance = &self.module_instances[func.module.0];
-                    assert!(i < module_instance.globals.len());
-                    let global_addr = module_instance.globals[i];
-                    let vl = self.globals[global_addr.0].value;
-                    frame.value_stack.push(vl);
+                    let vl = Interpreter::get_global(&self.store.globals, &self.state, func.module, i);
+                    frame.push(vl);
                 },
                 SetGlobal(i) => {
                     let i = i as usize;
-                    assert!(!frame.value_stack.is_empty());
-                    let vl = frame.value_stack.pop()
-                        .unwrap();
-                    assert!(func.module.0 < self.module_instances.len());
-                    let module_instance = &self.module_instances[func.module.0];
-                    assert!(i < module_instance.globals.len());
-                    let global_addr = module_instance.globals[i];
-                    
-                    assert!(self.globals[global_addr.0].mutable);
-                    assert_eq!(self.globals[global_addr.0].variable_type, vl.get_type());
-                    self.globals[global_addr.0].value = vl;
+                    let vl = frame.pop();
+                    Interpreter::set_global(&mut self.store.globals, &self.state, func.module, i, vl);
                 },
                 I32Load(i1, i2) => (),
                 I64Load(i1, i2) => (),
@@ -820,6 +817,7 @@ impl Interpreter {
                 // Because this is the serialized representation, sigh.
                 // TODO: Fix this somehow so we don't have to keep encoding/
                 // decoding floats but just check them once?
+                // Even though from_bits() should be basically free...
                 // BUGGO: This is technically incorrect because a signaling NaN
                 // *may* slip through from_bits(), and WebAssembly currently
                 // does not support signaling NaN's.
@@ -961,12 +959,12 @@ impl Interpreter {
     }
 
     fn run_function(&mut self, func: FunctionAddress, args: &[Value]) {
-        let frame = StackFrame::from_func_instance(&self.funcs[func.0], args);
+        let frame = StackFrame::from_func_instance(&self.state.funcs[func.0], args);
         println!("Frame is {:?}", frame);
 
-        self.stack.push(frame);
+        self.store.stack.push(frame);
         self.exec(func);
-        self.stack.pop();
+        self.store.stack.pop();
     }
 
     fn exec_const(frame: &mut StackFrame, vl: Value) {
