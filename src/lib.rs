@@ -60,6 +60,16 @@ impl Value {
             elements::ValueType::F64 => Value::F64(0.0),
         }
     }
+
+    /// Get the type of the value.
+    fn get_type(self) -> elements::ValueType {
+        match self {
+            Value::I32(_) => elements::ValueType::I32,
+            Value::I64(_) => elements::ValueType::I64,
+            Value::F32(_) => elements::ValueType::F32,
+            Value::F64(_) => elements::ValueType::F64,
+        }
+    }
 }
 
 
@@ -451,6 +461,22 @@ impl StackFrame {
             ip: 0,
         }
     }
+
+    /// Get a local variable in the stack frame by index.
+    /// Panics if out of bounds.
+    fn get_local(&mut self, idx: usize) -> Value {
+        assert!(idx < self.locals.len());
+        self.locals[idx]
+    }
+
+    /// Set a local variable in the stack frame by index.
+    /// Panics if out of bounds or if the type of the new
+    /// variable does not match the old one(?).
+    fn set_local(&mut self, idx: usize, vl: Value) {
+        assert!(idx < self.locals.len());
+        assert_eq!(self.locals[idx].get_type(), vl.get_type());
+        self.locals[idx] = vl;
+    }
 }
 
 
@@ -538,6 +564,32 @@ impl Interpreter {
         }
     }
 
+    /// Get a global variable by *index*.  Needs a module instance
+    /// address to look up the global variable's address.
+    /// Panics if out of bounds.
+    fn get_global(&self, module_addr: ModuleAddress, idx: usize) -> Value {
+        assert!(module_addr.0 < self.module_instances.len());
+        let module_instance = &self.module_instances[module_addr.0];
+        assert!(idx < module_instance.globals.len());
+        let global_addr = module_instance.globals[idx];
+        self.globals[global_addr.0].value
+    }
+
+    /// Sets a global variable by *index*.  Needs a module instance
+    /// address to look up the global variable's address.
+    /// Panics if out of bounds or if the type of the new
+    /// variable does not match the old one(?).
+    fn set_global(&mut self, module_addr: ModuleAddress, idx: usize, vl: Value) {
+        assert!(module_addr.0 < self.module_instances.len());
+        let module_instance = &self.module_instances[module_addr.0];
+        assert!(idx < module_instance.globals.len());
+        let global_addr = module_instance.globals[idx];
+
+        assert!(self.globals[global_addr.0].mutable);
+        assert_eq!(self.globals[global_addr.0].variable_type, vl.get_type());
+        self.globals[global_addr.0].value = vl;
+    }
+
     /// Builder function to add a loaded and validated module to the
     /// program.
     ///
@@ -613,6 +665,7 @@ impl Interpreter {
         let func = &self.funcs[func.0];
         let frame = self.stack.last_mut().expect("No stack frame, should be impossible");
         use elements::Opcode::*;
+        use std::usize;
         loop {
             let op = &func.body[frame.ip];
 
@@ -633,10 +686,32 @@ impl Interpreter {
                 CallIndirect(i, b) => (),
                 Drop => (),
                 Select => (),
-                GetLocal(i) => (),
-                SetLocal(i) => (),
-                TeeLocal(i) => (),
-                GetGlobal(i) => (),
+                GetLocal(i) => {
+                    let i = i as usize;
+                    let vl = frame.get_local(i as usize);
+                    frame.value_stack.push(vl);
+                },
+                SetLocal(i) => {
+                    let i = i as usize;
+                    assert!(!frame.value_stack.is_empty());
+                    let vl = frame.value_stack.pop()
+                        .unwrap();
+                    frame.set_local(i, vl);
+                },
+                TeeLocal(i) => {
+                    let i = i as usize;
+                    assert!(!frame.value_stack.is_empty());
+                    let vl = *frame.value_stack.last()
+                        .unwrap();
+                    frame.set_local(i, vl);
+                },
+                GetGlobal(i) => {
+                    let i = i as usize;
+                    assert!(!frame.value_stack.is_empty());
+                    let vl = frame.value_stack.pop()
+                        .unwrap();
+                    let vl = self.get_global(func.module, i);
+                },
                 SetGlobal(i) => (),
                 I32Load(i1, i2) => (),
                 I64Load(i1, i2) => (),
