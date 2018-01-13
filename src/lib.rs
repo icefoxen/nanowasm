@@ -93,6 +93,26 @@ impl From<Value> for i64 {
     }
 }
 
+
+
+impl From<Value> for u32 {    
+    fn from(vl: Value) -> u32 {
+        match vl {
+            Value::I32(i) => i as u32,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
+impl From<Value> for u64 {
+    fn from(vl: Value) -> u64 {
+        match vl {
+            Value::I64(i) => i as u64,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
 impl From<Value> for f32 {    
     fn from(vl: Value) -> f32 {
         match vl {
@@ -109,8 +129,18 @@ impl From<Value> for f64 {
             _ => panic!("Unwrap value failed"),
         }
     }
-
 }
+
+impl From<Value> for bool {    
+    fn from(vl: Value) -> bool {
+        match vl {
+            Value::I32(i) => i != 0,
+            _ => panic!("Unwrap value failed"),
+        }
+    }
+}
+
+
 
 // parity-wasm is hard to understand but does have some
 // pretty nice ideas.
@@ -139,6 +169,15 @@ impl From<f64> for Value {
     }
 }
 
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        if b {
+            Value::I32(1)
+        } else {
+            Value::I32(0)
+        }
+    }
+}
 
 
 // /// Memory for a variable.
@@ -588,6 +627,19 @@ impl StackFrame {
         self.pop().into()
     }
 
+    /// Pops the top two values of the value_stack and returns a pair of numbers.
+    ///
+    /// Panics if the stack is empty or the Value is not the right
+    /// numeric type.
+    fn pop2_as<T1, T2>(&mut self) -> (T1, T2)
+        where T1: From<Value>,
+              T2: From<Value>
+    {
+        let a = self.pop().into();
+        let b = self.pop().into();
+        (a, b)
+    }
+
     /// Pushes the given value to the top of the value_stack.
     /// Basically just for symmetry with `pop()`.
     fn push(&mut self, vl: Value) {
@@ -995,7 +1047,6 @@ impl Interpreter {
                     };
                     let target_ip = frame.pop_label(target_label);
                     frame.ip = target_ip.0;
-
                 },
                 Return => (),
                 Call(i) => {
