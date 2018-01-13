@@ -649,7 +649,11 @@ impl StackFrame {
         self.pop().into()
     }
 
-    /// Pops the top two values of the value_stack and returns a pair of numbers.
+    /// Pops the top two values of the value_stack and returns them
+    /// cast into the given types.
+    ///
+    /// The top of the stack is the second value returned, the first
+    /// is one down from the top.
     ///
     /// Panics if the stack is empty or the Value is not the right
     /// numeric type.
@@ -660,7 +664,7 @@ impl StackFrame {
     {
         let a = self.pop().into();
         let b = self.pop().into();
-        (a, b)
+        (b, a)
     }
 
     /// Pushes the given value to the top of the value_stack.

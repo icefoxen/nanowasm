@@ -102,7 +102,7 @@ fn test_i32_sub() {
     test_stack_program(
         &vec![Opcode::I32Sub], 
         &vec![Value::I32(1), Value::I32(2)], 
-        Some(Value::I32(1)));
+        Some(Value::I32(-1)));
 }
 
 #[test]
@@ -110,5 +110,5 @@ fn test_i64_sub() {
     test_stack_program(
         &vec![Opcode::I64Sub], 
         &vec![Value::I64(-1), Value::I64(99)], 
-        Some(Value::I64(100)));
+        Some(Value::I64(-100)));
 }
