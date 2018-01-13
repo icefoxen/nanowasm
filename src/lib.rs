@@ -157,6 +157,18 @@ impl From<i64> for Value {
     }
 }
 
+impl From<u32> for Value {
+    fn from(num: u32) -> Self {
+        Value::I32(num as i32)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(num: u64) -> Self {
+        Value::I64(num as i64)
+    }
+}
+
 impl From<f32> for Value {
     fn from(num: f32) -> Self {
         Value::F32(num)
@@ -984,6 +996,7 @@ impl Interpreter {
             }
             let op = &func.body[frame.ip];
 
+            println!("Frame: {:?}", frame);
             println!("Op: {:?}", op);
             match *op {
                 Unreachable => panic!("Unreachable?"),
@@ -1143,23 +1156,56 @@ impl Interpreter {
                 // See https://webassembly.github.io/spec/core/exec/numerics.html#floating-point-operations
                 F32Const(i) => {
                     use std::f32;
-                    Interpreter::exec_const(frame, Value::from(f32::from_bits(i)))
+                    Interpreter::exec_const(frame, Value::from(f32::from_bits(i)));
                 }
                 F64Const(l) => {
                     use std::f64;
-                    Interpreter::exec_const(frame, Value::from(f64::from_bits(l)))
+                    Interpreter::exec_const(frame, Value::from(f64::from_bits(l)));
                 },
-                I32Eqz => (),
-                I32Eq => (),
-                I32Ne => (),
-                I32LtS => (),
-                I32LtU => (),
-                I32GtS => (),
-                I32GtU => (),
-                I32LeS => (),
-                I32LeU => (),
-                I32GeS => (),
-                I32GeU => (),
+                I32Eqz => {
+                    let a = frame.pop_as::<i32>();
+                    frame.push((a == 0).into());
+                },
+                I32Eq => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a == b).into());
+                },
+                I32Ne => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a != b).into());
+                },
+                I32LtS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a < b).into());
+                },
+                I32LtU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push((a < b).into());
+                },
+                I32GtS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a > b).into());
+                },
+                I32GtU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push((a > b).into());
+                },
+                I32LeS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a <= b).into());
+                },
+                I32LeU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push((a <= b).into());
+                },
+                I32GeS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push((a >= b).into());
+                },
+                I32GeU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push((a >= b).into());
+                },
                 I64Eqz => (),
                 I64Eq => (),
                 I64Ne => (),
@@ -1186,13 +1232,34 @@ impl Interpreter {
                 I32Clz => (),
                 I32Ctz => (),
                 I32Popcnt => (),
-                I32Add => (),
-                I32Sub => (),
-                I32Mul => (),
-                I32DivS => (),
-                I32DivU => (),
-                I32RemS => (),
-                I32RemU => (),
+                I32Add => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push(a.wrapping_add(b).into());
+                },
+                I32Sub => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push(a.wrapping_sub(b).into());
+                },
+                I32Mul => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push(a.wrapping_mul(b).into());
+                },
+                I32DivS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push(a.wrapping_div(b).into());
+                },
+                I32DivU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push(a.wrapping_div(b).into());
+                },
+                I32RemS => {
+                    let (a, b) = frame.pop2_as::<i32, i32>();
+                    frame.push(a.wrapping_rem(b).into());
+                },
+                I32RemU => {
+                    let (a, b) = frame.pop2_as::<u32, u32>();
+                    frame.push(a.wrapping_rem(b).into());
+                },
                 I32And => (),
                 I32Or => (),
                 I32Xor => (),
@@ -1204,11 +1271,26 @@ impl Interpreter {
                 I64Clz => (),
                 I64Ctz => (),
                 I64Popcnt => (),
-                I64Add => (),
-                I64Sub => (),
-                I64Mul => (),
-                I64DivS => (),
-                I64DivU => (),
+                I64Add => {
+                    let (a, b) = frame.pop2_as::<i64, i64>();
+                    frame.push(a.wrapping_add(b).into());
+                },
+                I64Sub => {
+                    let (a, b) = frame.pop2_as::<i64, i64>();
+                    frame.push(a.wrapping_sub(b).into());
+                },
+                I64Mul => {
+                    let (a, b) = frame.pop2_as::<i64, i64>();
+                    frame.push(a.wrapping_mul(b).into());
+                },
+                I64DivS => {
+                    let (a, b) = frame.pop2_as::<i64, i64>();
+                    frame.push(a.wrapping_div(b).into());
+                },
+                I64DivU => {
+                    let (a, b) = frame.pop2_as::<u64, u64>();
+                    frame.push(a.wrapping_div(b).into());
+                },
                 I64RemS => (),
                 I64RemU => (),
                 I64And => (),
@@ -1226,10 +1308,22 @@ impl Interpreter {
                 F32Trunc => (),
                 F32Nearest => (),
                 F32Sqrt => (),
-                F32Add => (),
-                F32Sub => (),
-                F32Mul => (),
-                F32Div => (),
+                F32Add => {
+                    let (a, b) = frame.pop2_as::<f32, f32>();
+                    frame.push((a + b).into());
+                },
+                F32Sub => {
+                    let (a, b) = frame.pop2_as::<f32, f32>();
+                    frame.push((a - b).into());
+                },
+                F32Mul => {
+                    let (a, b) = frame.pop2_as::<f32, f32>();
+                    frame.push((a * b).into());
+                },
+                F32Div => {
+                    let (a, b) = frame.pop2_as::<f32, f32>();
+                    frame.push((a / b).into());
+                },
                 F32Min => (),
                 F32Max => (),
                 F32Copysign => (),
@@ -1240,10 +1334,22 @@ impl Interpreter {
                 F64Trunc => (),
                 F64Nearest => (),
                 F64Sqrt => (),
-                F64Add => (),
-                F64Sub => (),
-                F64Mul => (),
-                F64Div => (),
+                F64Add => {
+                    let (a, b) = frame.pop2_as::<f64, f64>();
+                    frame.push((a + b).into());
+                },
+                F64Sub => {
+                    let (a, b) = frame.pop2_as::<f64, f64>();
+                    frame.push((a - b).into());
+                },
+                F64Mul => {
+                    let (a, b) = frame.pop2_as::<f64, f64>();
+                    frame.push((a * b).into());
+                },
+                F64Div => {
+                    let (a, b) = frame.pop2_as::<f64, f64>();
+                    frame.push((a / b).into());
+                },
                 F64Min => (),
                 F64Max => (),
                 F64Copysign => (),
