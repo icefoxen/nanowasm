@@ -135,6 +135,19 @@ impl From<Value> for bool {
     }
 }
 
+// Grrrr I think these are impossible.  x_X
+// impl<'a, T> From<&'a Value> for T where T: From<Value> {
+//     fn from(vl: &'a Value) -> T {
+//         (*vl).into()
+//     }
+// }
+
+// impl<'a> From<Value> for &'a T where T: From<Value> {
+//     fn from(vl: Value) -> &'a T {
+//         &vl.into()
+//     }
+// }
+
 // parity-wasm is hard to understand but does have some
 // pretty nice ideas.
 
@@ -989,6 +1002,29 @@ impl Interpreter {
         frame.push(vl);
     }
 
+    /// Helper function for running binary operations that pop
+    /// two values from the stack and push one result
+    fn exec_binop<T1, T2, Res, F>(frame: &mut StackFrame, op: F)
+        where T1: From<Value>,
+              T2: From<Value>,
+              Res: Into<Value>,
+              F: Fn(T1, T2) -> Res
+     {
+        let (a, b) = frame.pop2_as::<T1, T2>();
+        frame.push(op(a, b).into());
+    }
+
+    /// Helper function for running binary operations that pop
+    /// two values from the stack and push one result
+    fn exec_uniop<T, Res, F>(frame: &mut StackFrame, op: F)
+        where T: From<Value>,
+              Res: Into<Value>,
+              F: Fn(T) -> Res
+     {
+        let a = frame.pop_as::<T>();
+        frame.push(op(a).into());
+    }
+
     /// Actually do the interpretation of the given function, assuming
     /// that a stack frame already exists for it with args and locals
     /// and such
@@ -1155,7 +1191,7 @@ impl Interpreter {
                 GrowMemory(b) => (),
                 I32Const(i) => Interpreter::exec_const(frame, i.into()),
                 I64Const(l) => Interpreter::exec_const(frame, l.into()),
-                // Why oh why are these represented as u32 and u64?
+                // Why oh why are these floats represented as u32 and u64?
                 // Because this is the serialized representation, sigh.
                 // TODO: Fix this somehow so we don't have to keep encoding/
                 // decoding floats but just check them once?
@@ -1173,48 +1209,37 @@ impl Interpreter {
                     Interpreter::exec_const(frame, Value::from(f64::from_bits(l)));
                 }
                 I32Eqz => {
-                    let a = frame.pop_as::<i32>();
-                    frame.push((a == 0).into());
+                    Interpreter::exec_uniop::<i32, bool, _>(frame, |x| i32::eq(&x, &0));
                 }
                 I32Eq => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a == b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::eq(&x, &y));
                 }
                 I32Ne => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a != b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::ne(&x, &y));
                 }
                 I32LtS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a < b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::lt(&x, &y));
                 }
                 I32LtU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push((a < b).into());
+                    Interpreter::exec_binop(frame, |x, y| u32::lt(&x, &y));
                 }
                 I32GtS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a > b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::gt(&x, &y));
                 }
                 I32GtU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push((a > b).into());
+                    Interpreter::exec_binop(frame, |x, y| u32::gt(&x, &y));
                 }
                 I32LeS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a <= b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::le(&x, &y));
                 }
                 I32LeU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push((a <= b).into());
+                    Interpreter::exec_binop(frame, |x, y| u32::le(&x, &y));
                 }
                 I32GeS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push((a >= b).into());
+                    Interpreter::exec_binop(frame, |x, y| i32::ge(&x, &y));
                 }
                 I32GeU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push((a >= b).into());
+                    Interpreter::exec_binop(frame, |x, y| u32::ge(&x, &y));
                 }
                 I64Eqz => (),
                 I64Eq => (),
@@ -1239,129 +1264,227 @@ impl Interpreter {
                 F64Gt => (),
                 F64Le => (),
                 F64Ge => (),
-                I32Clz => (),
-                I32Ctz => (),
-                I32Popcnt => (),
+                I32Clz => {
+                    Interpreter::exec_uniop(frame, i32::leading_zeros);
+                }
+                I32Ctz => {
+                    Interpreter::exec_uniop(frame, i32::trailing_zeros);
+                }
+                I32Popcnt => {
+                    Interpreter::exec_uniop(frame, i32::count_zeros);
+                }
                 I32Add => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push(a.wrapping_add(b).into());
+                    Interpreter::exec_binop(frame, i32::wrapping_add);
                 }
                 I32Sub => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push(a.wrapping_sub(b).into());
+                    Interpreter::exec_binop(frame, i32::wrapping_sub);
                 }
                 I32Mul => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push(a.wrapping_mul(b).into());
+                    Interpreter::exec_binop(frame, i32::wrapping_mul);
                 }
                 I32DivS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push(a.wrapping_div(b).into());
+                    Interpreter::exec_binop(frame, i32::wrapping_div);
                 }
                 I32DivU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push(a.wrapping_div(b).into());
+                    Interpreter::exec_binop(frame, u32::wrapping_div);
                 }
                 I32RemS => {
-                    let (a, b) = frame.pop2_as::<i32, i32>();
-                    frame.push(a.wrapping_rem(b).into());
+                    Interpreter::exec_binop(frame, i32::wrapping_rem);
                 }
                 I32RemU => {
-                    let (a, b) = frame.pop2_as::<u32, u32>();
-                    frame.push(a.wrapping_rem(b).into());
+                    Interpreter::exec_binop(frame, u32::wrapping_rem);
                 }
-                I32And => (),
-                I32Or => (),
-                I32Xor => (),
-                I32Shl => (),
-                I32ShrS => (),
-                I32ShrU => (),
-                I32Rotl => (),
-                I32Rotr => (),
-                I64Clz => (),
-                I64Ctz => (),
-                I64Popcnt => (),
+                I32And => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::bitand);
+                }
+                I32Or => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::bitor);
+                }
+                I32Xor => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::bitxor);
+                }
+                I32Shl => {
+                    use std::ops::*;
+                    // TODO: Figure out the correct overflow semantics to use
+                    Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shl);
+                }
+                I32ShrS => {
+                    use std::ops::*;
+                    // TODO: Figure out the correct overflow semantics to use
+                    // Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shr);
+                }
+                I32ShrU => {
+                    use std::ops::*;
+                    // TODO: Figure out the correct overflow semantics to use
+                    // Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shr);
+                }
+                I32Rotl => {
+                    use std::ops::*;
+                    Interpreter::exec_binop(frame, i32::rotate_left);
+                }
+                I32Rotr => {
+                    use std::ops::*;
+                    Interpreter::exec_binop(frame, i32::rotate_right);
+                }
+                I64Clz => {
+                    Interpreter::exec_uniop(frame, i64::leading_zeros);
+                }
+                I64Ctz => {
+                    Interpreter::exec_uniop(frame, i64::trailing_zeros);
+                }
+                I64Popcnt => {
+                    Interpreter::exec_uniop(frame, i64::count_zeros);
+                }
                 I64Add => {
-                    let (a, b) = frame.pop2_as::<i64, i64>();
-                    frame.push(a.wrapping_add(b).into());
+                    Interpreter::exec_binop(frame, i64::wrapping_add);
                 }
                 I64Sub => {
-                    let (a, b) = frame.pop2_as::<i64, i64>();
-                    frame.push(a.wrapping_sub(b).into());
+                    Interpreter::exec_binop(frame, i64::wrapping_sub);
                 }
                 I64Mul => {
-                    let (a, b) = frame.pop2_as::<i64, i64>();
-                    frame.push(a.wrapping_mul(b).into());
+                    Interpreter::exec_binop(frame, i64::wrapping_mul);
                 }
                 I64DivS => {
-                    let (a, b) = frame.pop2_as::<i64, i64>();
-                    frame.push(a.wrapping_div(b).into());
+                    Interpreter::exec_binop(frame, i64::wrapping_div);
                 }
                 I64DivU => {
-                    let (a, b) = frame.pop2_as::<u64, u64>();
-                    frame.push(a.wrapping_div(b).into());
+                    Interpreter::exec_binop(frame, u64::wrapping_div);
                 }
-                I64RemS => (),
-                I64RemU => (),
-                I64And => (),
-                I64Or => (),
-                I64Xor => (),
-                I64Shl => (),
+                I64RemS => {
+                    Interpreter::exec_binop(frame, i64::wrapping_rem);
+                }
+                I64RemU => {
+                    Interpreter::exec_binop(frame, u64::wrapping_rem);
+                }
+                I64And => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, i64, _, _>(frame, i64::bitand);
+                }
+                I64Or => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, i64, _, _>(frame, i64::bitor);
+                }
+                I64Xor => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, i64, _, _>(frame, i64::bitxor);
+                }
+                I64Shl => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, i64, _, _>(frame, i64::shl);
+                }
                 I64ShrS => (),
                 I64ShrU => (),
-                I64Rotl => (),
-                I64Rotr => (),
-                F32Abs => (),
-                F32Neg => (),
-                F32Ceil => (),
-                F32Floor => (),
-                F32Trunc => (),
-                F32Nearest => (),
-                F32Sqrt => (),
+                I64Rotl => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::rotate_left);
+                }
+                I64Rotr => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::rotate_right);
+                }
+                F32Abs => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::abs);
+                }
+                F32Neg => {
+                    // TODO: Double-check this for correctness
+                    Interpreter::exec_uniop::<f32, _, _>(frame, |f| -f);
+                }
+                F32Ceil => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::ceil);
+                }
+                F32Floor => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::floor);
+                }
+                F32Trunc => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::trunc);
+                }
+                F32Nearest => {
+                    // TODO: Double-check rounding behavior is correct
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::round);
+                }
+                F32Sqrt => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f32::sqrt);
+                }
                 F32Add => {
-                    let (a, b) = frame.pop2_as::<f32, f32>();
-                    frame.push((a + b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::add);
                 }
                 F32Sub => {
-                    let (a, b) = frame.pop2_as::<f32, f32>();
-                    frame.push((a - b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::sub);
                 }
                 F32Mul => {
-                    let (a, b) = frame.pop2_as::<f32, f32>();
-                    frame.push((a * b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::mul);
                 }
                 F32Div => {
-                    let (a, b) = frame.pop2_as::<f32, f32>();
-                    frame.push((a / b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::div);
                 }
-                F32Min => (),
-                F32Max => (),
+                F32Min => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::min);
+                }
+                F32Max => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::max);
+                }
                 F32Copysign => (),
-                F64Abs => (),
-                F64Neg => (),
-                F64Ceil => (),
-                F64Floor => (),
-                F64Trunc => (),
-                F64Nearest => (),
-                F64Sqrt => (),
+                F64Abs => {
+                    use std::ops::*;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::abs);
+                }
+                F64Neg => {
+                    // TODO: Double-check this for correctness
+                    Interpreter::exec_uniop::<f64, _, _>(frame, |f| -f);
+                }
+                F64Ceil => {
+                    use std::ops::*;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::ceil);
+                }
+                F64Floor => {
+                    use std::ops::*;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::floor);
+                }
+                F64Trunc => {
+                    use std::ops::*;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::trunc);
+                }
+                F64Nearest => {
+                    // TODO: Double-check rounding behavior is correct
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::round);
+                }
+                F64Sqrt => {
+                    use std::ops::*;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, f64::sqrt);
+                }
                 F64Add => {
-                    let (a, b) = frame.pop2_as::<f64, f64>();
-                    frame.push((a + b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::add);
                 }
                 F64Sub => {
-                    let (a, b) = frame.pop2_as::<f64, f64>();
-                    frame.push((a - b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::sub);
                 }
                 F64Mul => {
-                    let (a, b) = frame.pop2_as::<f64, f64>();
-                    frame.push((a * b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::mul);
                 }
                 F64Div => {
-                    let (a, b) = frame.pop2_as::<f64, f64>();
-                    frame.push((a / b).into());
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::div);
                 }
-                F64Min => (),
-                F64Max => (),
+                F64Min => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::min);
+                }
+                F64Max => {
+                    use std::ops::*;
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::max);
+                }
                 F64Copysign => (),
                 I32WarpI64 => (),
                 I32TruncSF32 => (),
