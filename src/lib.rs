@@ -10,7 +10,6 @@ use std::collections::HashMap;
 #[cfg(test)]
 mod tests;
 
-
 /// A type signature for a function type, intended to
 /// go into the `types` section of a module.
 ///
@@ -29,12 +28,10 @@ pub struct FuncType {
 impl<'a> From<&'a elements::Type> for FuncType {
     fn from(t: &'a elements::Type) -> Self {
         match *t {
-            elements::Type::Function(ref ft) => {
-                Self {
-                    params: ft.params().to_owned(),
-                    return_type: ft.return_type(),
-                }
-            }
+            elements::Type::Function(ref ft) => Self {
+                params: ft.params().to_owned(),
+                return_type: ft.return_type(),
+            },
         }
     }
 }
@@ -75,7 +72,7 @@ impl Value {
     }
 }
 
-impl From<Value> for i32 {    
+impl From<Value> for i32 {
     fn from(vl: Value) -> i32 {
         match vl {
             Value::I32(i) => i,
@@ -93,9 +90,7 @@ impl From<Value> for i64 {
     }
 }
 
-
-
-impl From<Value> for u32 {    
+impl From<Value> for u32 {
     fn from(vl: Value) -> u32 {
         match vl {
             Value::I32(i) => i as u32,
@@ -113,7 +108,7 @@ impl From<Value> for u64 {
     }
 }
 
-impl From<Value> for f32 {    
+impl From<Value> for f32 {
     fn from(vl: Value) -> f32 {
         match vl {
             Value::F32(i) => i,
@@ -122,7 +117,7 @@ impl From<Value> for f32 {
     }
 }
 
-impl From<Value> for f64 {    
+impl From<Value> for f64 {
     fn from(vl: Value) -> f64 {
         match vl {
             Value::F64(i) => i,
@@ -131,7 +126,7 @@ impl From<Value> for f64 {
     }
 }
 
-impl From<Value> for bool {    
+impl From<Value> for bool {
     fn from(vl: Value) -> bool {
         match vl {
             Value::I32(i) => i != 0,
@@ -139,8 +134,6 @@ impl From<Value> for bool {
         }
     }
 }
-
-
 
 // parity-wasm is hard to understand but does have some
 // pretty nice ideas.
@@ -191,7 +184,6 @@ impl From<bool> for Value {
     }
 }
 
-
 // /// Memory for a variable.
 // #[derive(Debug, Copy, Clone, PartialEq)]
 // pub struct VariableSlot {
@@ -223,9 +215,7 @@ impl From<bool> for Value {
 /// Takes a slice of `Local`'s (local variable *specifications*),
 /// and creates a vec of their types.
 fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
-    let num_local_slots = locals.iter()
-        .map(|x| x.count() as usize)
-        .sum();
+    let num_local_slots = locals.iter().map(|x| x.count() as usize).sum();
     let mut v = Vec::with_capacity(num_local_slots);
     for local in locals {
         for i in 0..local.count() {
@@ -279,7 +269,6 @@ impl Table {
         self.data = v;
         self.max = Some(size);
     }
-
 }
 
 /// A structure containing a memory space.
@@ -293,7 +282,7 @@ pub struct Memory {
 
 impl Memory {
     const MEMORY_PAGE_SIZE: usize = 65_536;
-    
+
     pub fn new(size: Option<u32>) -> Self {
         let mut mem = Self {
             data: vec![],
@@ -357,7 +346,7 @@ impl LoadedModule {
             types: vec![],
             funcs: vec![],
             start: None,
-            
+
             tables: Table::new(),
             mem: Memory::new(None),
             globals: vec![],
@@ -367,11 +356,9 @@ impl LoadedModule {
 
         // Allocate types
         if let Some(types) = module.type_section() {
-            let functypes = types.types().iter()
-                .map(From::from);
+            let functypes = types.types().iter().map(From::from);
             m.types.extend(functypes);
         }
-
 
         // Allocate functions
         //
@@ -385,19 +372,20 @@ impl LoadedModule {
             assert_eq!(code.bodies().len(), functions.entries().len());
             // Evade double-borrow of m here.
             let types = &m.types;
-            let converted_funcs = code.bodies().iter()
-                .zip(functions.entries())
-                .map(|(c, f)| {
-                    // Make sure the function signature is a valid type.
-                    let type_idx = f.type_ref() as usize;
-                    assert!(type_idx < types.len(), "Function refers to a type signature that does not exist!");
-                    
-                    Func {
-                        typeidx: TypeIdx(type_idx),
-                        locals: types_from_locals(c.locals()),
-                        body: c.code().elements().to_owned(),
-                    }
-                });
+            let converted_funcs = code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
+                // Make sure the function signature is a valid type.
+                let type_idx = f.type_ref() as usize;
+                assert!(
+                    type_idx < types.len(),
+                    "Function refers to a type signature that does not exist!"
+                );
+
+                Func {
+                    typeidx: TypeIdx(type_idx),
+                    locals: types_from_locals(c.locals()),
+                    body: c.code().elements().to_owned(),
+                }
+            });
             m.funcs.extend(converted_funcs);
         } else {
             panic!("Code section exists but type section does not, or vice versa!");
@@ -408,7 +396,10 @@ impl LoadedModule {
             println!("Table: {:?}", table);
             // currently we can only have one table section with
             // 0 or 1 elements in it, so.
-            assert!(table.entries().len() < 2, "More than one memory entry, should never happen!");
+            assert!(
+                table.entries().len() < 2,
+                "More than one memory entry, should never happen!"
+            );
             if let Some(table) = table.entries().iter().next() {
                 // TODO: As far as I can tell, the memory's minimum size is never used?
                 let _min = table.limits().initial();
@@ -430,7 +421,10 @@ impl LoadedModule {
         if let Some(memory) = module.memory_section() {
             // currently we can only have one memory section with
             // 0 or 1 elements in it, so.
-            assert!(memory.entries().len() < 2, "More than one memory entry, should never happen!");
+            assert!(
+                memory.entries().len() < 2,
+                "More than one memory entry, should never happen!"
+            );
             if let Some(memory) = memory.entries().iter().next() {
                 // TODO: As far as I can tell, the memory's minimum size is never used?
                 let _min = memory.limits().initial();
@@ -441,7 +435,7 @@ impl LoadedModule {
                     m.mem.fill(max);
                 }
             }
-                 
+
             if let Some(data) = module.data_section() {
                 // TODO
                 unimplemented!();
@@ -450,8 +444,7 @@ impl LoadedModule {
 
         // Allocate globals
         if let Some(globals) = module.global_section() {
-            let global_iter = globals.entries().iter()
-                .map(|global| {
+            let global_iter = globals.entries().iter().map(|global| {
                 let global_type = global.global_type().content_type();
                 let mutability = global.global_type().is_mutable();
                 let init_code = Vec::from(global.init_expr().code());
@@ -483,7 +476,10 @@ impl LoadedModule {
         // Check for start section
         if let Some(start) = module.start_section() {
             let start = start as usize;
-            assert!(start < m.funcs.len(), "Start section references a non-existent function!");
+            assert!(
+                start < m.funcs.len(),
+                "Start section references a non-existent function!"
+            );
             m.start = Some(start);
         }
 
@@ -536,7 +532,7 @@ struct BlockLabel(usize);
 /// The activation record for an executing function.
 #[derive(Debug, Clone, Default)]
 pub struct StackFrame {
-    value_stack:  Vec<Value>,
+    value_stack: Vec<Value>,
     labels: Vec<BlockLabel>,
     locals: Vec<Value>,
     /// Where in the current function execution is.
@@ -554,8 +550,7 @@ impl StackFrame {
         // Push params
         locals.extend(args.into_iter());
         // Fill remaining space with 0's
-        let iter = functype.params.iter()
-            .map(|t| Value::default_from_type(*t));
+        let iter = functype.params.iter().map(|t| Value::default_from_type(*t));
         locals.extend(iter);
 
         Self {
@@ -574,7 +569,9 @@ impl StackFrame {
         // Push params
         locals.extend(args.into_iter());
         // Fill remaining space with 0's
-        let iter = func.functype.params.iter()
+        let iter = func.functype
+            .params
+            .iter()
             .map(|t| Value::default_from_type(*t));
         locals.extend(iter);
 
@@ -625,8 +622,7 @@ impl StackFrame {
     /// Panics if the stack is empty.
     fn pop(&mut self) -> Value {
         assert!(!self.value_stack.is_empty());
-        self.value_stack.pop()
-            .unwrap()
+        self.value_stack.pop().unwrap()
     }
 
     /// Pops the top of the value_stack and returns the value as a number.
@@ -634,7 +630,8 @@ impl StackFrame {
     /// Panics if the stack is empty or the Value is not the right
     /// numeric type.
     fn pop_as<T>(&mut self) -> T
-        where T: From<Value>
+    where
+        T: From<Value>,
     {
         self.pop().into()
     }
@@ -644,8 +641,9 @@ impl StackFrame {
     /// Panics if the stack is empty or the Value is not the right
     /// numeric type.
     fn pop2_as<T1, T2>(&mut self) -> (T1, T2)
-        where T1: From<Value>,
-              T2: From<Value>
+    where
+        T1: From<Value>,
+        T2: From<Value>,
     {
         let a = self.pop().into();
         let b = self.pop().into();
@@ -664,11 +662,9 @@ impl StackFrame {
     /// Panics if the stack is empty.
     fn peek(&self) -> Value {
         assert!(!self.value_stack.is_empty());
-        *self.value_stack.last()
-            .unwrap()
+        *self.value_stack.last().unwrap()
     }
 }
-
 
 /// Function address type; refers to a particular `FuncInstance` in the Store.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -716,7 +712,7 @@ pub struct FuncInstance {
 impl FuncInstance {
     /// Iterate through a function's body and construct the jump table for it.
     /// If we find a block instruction, the target is the matching end instruction.
-    /// 
+    ///
     /// Panics on invalid (improperly nested) blocks.
     fn compute_jump_table(body: &[elements::Opcode]) -> Vec<JumpTarget> {
         use elements::Opcode::*;
@@ -730,7 +726,7 @@ impl FuncInstance {
             match *op {
                 Block(_) => {
                     offset = FuncInstance::find_block_close(body, offset, &mut accm);
-                },
+                }
                 If(_) => {
                     offset = FuncInstance::find_block_close(body, offset, &mut accm);
                 }
@@ -747,7 +743,11 @@ impl FuncInstance {
     ///
     /// Returns the last instruction index of the block, so you can start
     /// there and go on to find the next block.
-    fn find_block_close(body: &[elements::Opcode], start_offset: usize, accm: &mut Vec<JumpTarget>) -> usize {
+    fn find_block_close(
+        body: &[elements::Opcode],
+        start_offset: usize,
+        accm: &mut Vec<JumpTarget>,
+    ) -> usize {
         use elements::Opcode::*;
         use std::usize;
         let mut offset = start_offset;
@@ -850,7 +850,7 @@ pub struct State {
 ///
 /// A module then becomes a **module instance** when ready to execute,
 /// which ceases to be a collection of data and becomes a collection
-/// of index-to-address mappings.  A **function instance** then is 
+/// of index-to-address mappings.  A **function instance** then is
 /// the original function definition, plus the a reference to the
 /// module instance to allow it to resolve its indices to addresses.
 #[derive(Debug, Clone)]
@@ -858,7 +858,6 @@ pub struct Interpreter {
     store: Store,
     state: State,
 }
-
 
 impl Interpreter {
     fn new() -> Self {
@@ -884,13 +883,17 @@ impl Interpreter {
         module_instance.functions[idx]
     }
 
-    
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
     ///
     /// This is unused since it creates irritating double-borrows.
-    fn get_global(globals: &[Global], state: &State, module_addr: ModuleAddress, idx: usize) -> Value {
+    fn get_global(
+        globals: &[Global],
+        state: &State,
+        module_addr: ModuleAddress,
+        idx: usize,
+    ) -> Value {
         let global_addr = Interpreter::resolve_global(state, module_addr, idx);
         globals[global_addr.0].value
     }
@@ -898,13 +901,19 @@ impl Interpreter {
     /// address to look up the global variable's address.
     /// Panics if out of bounds or if the type of the new
     /// variable does not match the old one(?).
-    fn set_global(globals: &mut [Global], state: &State, module_addr: ModuleAddress, idx: usize, vl: Value) {
+    fn set_global(
+        globals: &mut [Global],
+        state: &State,
+        module_addr: ModuleAddress,
+        idx: usize,
+        vl: Value,
+    ) {
         let global_addr = Interpreter::resolve_global(state, module_addr, idx);
         assert!(globals[global_addr.0].mutable);
         assert_eq!(globals[global_addr.0].variable_type, vl.get_type());
         globals[global_addr.0].value = vl;
     }
-    
+
     /// Builder function to add a loaded and validated module to the
     /// program.
     ///
@@ -914,8 +923,7 @@ impl Interpreter {
     ///
     /// We could load all the modules in arbitrary order, then validate+link
     /// them at the end, but meh.
-    fn with_module(mut self, module: LoadedModule
-) -> Self {
+    fn with_module(mut self, module: LoadedModule) -> Self {
         assert!(module.validated);
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
         let mut functions = vec![];
@@ -924,7 +932,7 @@ impl Interpreter {
         let globals = vec![];
         for func in module.funcs.iter() {
             let address = FunctionAddress(self.state.funcs.len());
-            let functype = module.types[func.typeidx.0].clone(); 
+            let functype = module.types[func.typeidx.0].clone();
             let instance = FuncInstance {
                 functype: functype,
                 locals: func.locals.clone(),
@@ -963,7 +971,6 @@ impl Interpreter {
     }
 */
 
-
     // fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
     //     // let function = self.funcs.get(func.0)
     //     //     .expect("Invalid function address, should never happen");
@@ -983,16 +990,21 @@ impl Interpreter {
     }
 
     /// Actually do the interpretation of the given function, assuming
-    /// that a stack frame already exists for it with args and locals 
+    /// that a stack frame already exists for it with args and locals
     /// and such
-    fn exec(store: &mut Store, state: &State, func: FunctionAddress, args: &[Value]) -> Option<Value> {
+    fn exec(
+        store: &mut Store,
+        state: &State,
+        func: FunctionAddress,
+        args: &[Value],
+    ) -> Option<Value> {
         let func = &state.funcs[func.0];
         let frame = &mut StackFrame::from_func_instance(func, args);
         use elements::Opcode::*;
         use std::usize;
         loop {
             if frame.ip == func.body.len() {
-                break
+                break;
             }
             let op = &func.body[frame.ip];
 
@@ -1002,19 +1014,21 @@ impl Interpreter {
                 Unreachable => panic!("Unreachable?"),
                 Nop => (),
                 Block(blocktype) => {
-                    let jump_target_idx = func.jump_table.binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
+                    let jump_target_idx = func.jump_table
+                        .binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
                         .expect("Cannot find matching jump table for block statement");
                     let jump_target = &func.jump_table[jump_target_idx];
                     frame.push_label(BlockLabel(jump_target.block_end_instruction));
-                },
+                }
                 Loop(blocktype) => {
                     // Instruction index to jump to on branch or such.
                     let end_idx = frame.ip + 1;
                     frame.push_label(BlockLabel(end_idx));
-                },
+                }
                 If(blocktype) => {
                     let vl = frame.pop_as::<i32>();
-                    let jump_target_idx = func.jump_table.binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
+                    let jump_target_idx = func.jump_table
+                        .binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
                         .expect("Cannot find matching jump table for if statement");
                     let jump_target = &func.jump_table[jump_target_idx];
                     frame.push_label(BlockLabel(jump_target.block_end_instruction));
@@ -1024,21 +1038,21 @@ impl Interpreter {
                         // Jump to instruction after the else section
                         frame.ip = jump_target.else_instruction + 1;
                     }
-                },
+                }
                 Else => {
-                    // Done with if part of the statement, 
+                    // Done with if part of the statement,
                     // skip to (just after) the end.
                     let target_ip = frame.pop_label(0);
                     frame.ip = target_ip.0 + 1;
-                },
+                }
                 End => {
                     // Done with whatever block we're in
                     frame.pop_label(0);
-                },
+                }
                 Br(i) => {
                     let target_ip = frame.pop_label(i as usize);
                     frame.ip = target_ip.0;
-                },
+                }
                 BrIf(i) => {
                     let i = i as usize;
                     let vl = frame.pop_as::<i32>();
@@ -1046,21 +1060,17 @@ impl Interpreter {
                         let target_ip = frame.pop_label(i);
                         frame.ip = target_ip.0;
                     }
-                },
+                }
                 BrTable(ref v, i) => {
                     // TODO: Double-check this is correct, I don't fully
                     // understand its goals.  It's a computed jump into
                     // a list of labels, but, needs verification.
                     let i = i as usize;
                     let vl = frame.pop_as::<i32>() as usize;
-                    let target_label = if vl < v.len() {
-                        v[vl] as usize
-                    } else {
-                        i
-                    };
+                    let target_label = if vl < v.len() { v[vl] as usize } else { i };
                     let target_ip = frame.pop_label(target_label);
                     frame.ip = target_ip.0;
-                },
+                }
                 Return => (),
                 Call(i) => {
                     let i = i as usize;
@@ -1091,33 +1101,33 @@ impl Interpreter {
                 CallIndirect(i, b) => (),
                 Drop => {
                     frame.pop();
-                },
+                }
                 Select => (),
                 GetLocal(i) => {
                     let i = i as usize;
                     let vl = frame.get_local(i as usize);
                     frame.value_stack.push(vl);
-                },
+                }
                 SetLocal(i) => {
                     let i = i as usize;
                     let vl = frame.pop();
                     frame.set_local(i, vl);
-                },
+                }
                 TeeLocal(i) => {
                     let i = i as usize;
                     let vl = frame.peek();
                     frame.set_local(i, vl);
-                },
+                }
                 GetGlobal(i) => {
                     let i = i as usize;
                     let vl = Interpreter::get_global(&store.globals, &state, func.module, i);
                     frame.push(vl);
-                },
+                }
                 SetGlobal(i) => {
                     let i = i as usize;
                     let vl = frame.pop();
                     Interpreter::set_global(&mut store.globals, &state, func.module, i, vl);
-                },
+                }
                 I32Load(i1, i2) => (),
                 I64Load(i1, i2) => (),
                 F32Load(i1, i2) => (),
@@ -1161,51 +1171,51 @@ impl Interpreter {
                 F64Const(l) => {
                     use std::f64;
                     Interpreter::exec_const(frame, Value::from(f64::from_bits(l)));
-                },
+                }
                 I32Eqz => {
                     let a = frame.pop_as::<i32>();
                     frame.push((a == 0).into());
-                },
+                }
                 I32Eq => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a == b).into());
-                },
+                }
                 I32Ne => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a != b).into());
-                },
+                }
                 I32LtS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a < b).into());
-                },
+                }
                 I32LtU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push((a < b).into());
-                },
+                }
                 I32GtS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a > b).into());
-                },
+                }
                 I32GtU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push((a > b).into());
-                },
+                }
                 I32LeS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a <= b).into());
-                },
+                }
                 I32LeU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push((a <= b).into());
-                },
+                }
                 I32GeS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push((a >= b).into());
-                },
+                }
                 I32GeU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push((a >= b).into());
-                },
+                }
                 I64Eqz => (),
                 I64Eq => (),
                 I64Ne => (),
@@ -1235,31 +1245,31 @@ impl Interpreter {
                 I32Add => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push(a.wrapping_add(b).into());
-                },
+                }
                 I32Sub => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push(a.wrapping_sub(b).into());
-                },
+                }
                 I32Mul => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push(a.wrapping_mul(b).into());
-                },
+                }
                 I32DivS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push(a.wrapping_div(b).into());
-                },
+                }
                 I32DivU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push(a.wrapping_div(b).into());
-                },
+                }
                 I32RemS => {
                     let (a, b) = frame.pop2_as::<i32, i32>();
                     frame.push(a.wrapping_rem(b).into());
-                },
+                }
                 I32RemU => {
                     let (a, b) = frame.pop2_as::<u32, u32>();
                     frame.push(a.wrapping_rem(b).into());
-                },
+                }
                 I32And => (),
                 I32Or => (),
                 I32Xor => (),
@@ -1274,23 +1284,23 @@ impl Interpreter {
                 I64Add => {
                     let (a, b) = frame.pop2_as::<i64, i64>();
                     frame.push(a.wrapping_add(b).into());
-                },
+                }
                 I64Sub => {
                     let (a, b) = frame.pop2_as::<i64, i64>();
                     frame.push(a.wrapping_sub(b).into());
-                },
+                }
                 I64Mul => {
                     let (a, b) = frame.pop2_as::<i64, i64>();
                     frame.push(a.wrapping_mul(b).into());
-                },
+                }
                 I64DivS => {
                     let (a, b) = frame.pop2_as::<i64, i64>();
                     frame.push(a.wrapping_div(b).into());
-                },
+                }
                 I64DivU => {
                     let (a, b) = frame.pop2_as::<u64, u64>();
                     frame.push(a.wrapping_div(b).into());
-                },
+                }
                 I64RemS => (),
                 I64RemU => (),
                 I64And => (),
@@ -1311,19 +1321,19 @@ impl Interpreter {
                 F32Add => {
                     let (a, b) = frame.pop2_as::<f32, f32>();
                     frame.push((a + b).into());
-                },
+                }
                 F32Sub => {
                     let (a, b) = frame.pop2_as::<f32, f32>();
                     frame.push((a - b).into());
-                },
+                }
                 F32Mul => {
                     let (a, b) = frame.pop2_as::<f32, f32>();
                     frame.push((a * b).into());
-                },
+                }
                 F32Div => {
                     let (a, b) = frame.pop2_as::<f32, f32>();
                     frame.push((a / b).into());
-                },
+                }
                 F32Min => (),
                 F32Max => (),
                 F32Copysign => (),
@@ -1337,19 +1347,19 @@ impl Interpreter {
                 F64Add => {
                     let (a, b) = frame.pop2_as::<f64, f64>();
                     frame.push((a + b).into());
-                },
+                }
                 F64Sub => {
                     let (a, b) = frame.pop2_as::<f64, f64>();
                     frame.push((a - b).into());
-                },
+                }
                 F64Mul => {
                     let (a, b) = frame.pop2_as::<f64, f64>();
                     frame.push((a * b).into());
-                },
+                }
                 F64Div => {
                     let (a, b) = frame.pop2_as::<f64, f64>();
                     frame.push((a / b).into());
-                },
+                }
                 F64Min => (),
                 F64Max => (),
                 F64Copysign => (),
@@ -1383,15 +1393,14 @@ impl Interpreter {
         }
         // Return the function's return value (if any).
         // TODO: We should check that the value matches the function's stated
-        // type and arity?
+        // type and arity.
         frame.value_stack.last().cloned()
     }
 
     /// A nice shortcut to run `exec()` with appropriate values.
-    fn run(&mut self, func: FunctionAddress, args: &[Value]) {
+    fn run(&mut self, func: FunctionAddress, args: &[Value]) -> Option<Value> {
         let state = &self.state;
         let store = &mut self.store;
-        Interpreter::exec(store, state, func, args);
+        Interpreter::exec(store, state, func, args)
     }
 }
-

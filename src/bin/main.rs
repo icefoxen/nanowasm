@@ -2,13 +2,14 @@ extern crate clap;
 extern crate parity_wasm;
 
 use std::sync::Arc;
-use clap::{Arg, App};
+use clap::{App, Arg};
 use std::collections::HashMap;
 use std::borrow::Cow;
 use std::sync::Weak;
 
-use parity_wasm::interpreter::{CallerContext, Error, RuntimeValue, UserFunctionExecutor,
-UserFunctionDescriptor, ModuleInstanceInterface, UserDefinedElements, ModuleInstance};
+use parity_wasm::interpreter::{CallerContext, Error, ModuleInstance, ModuleInstanceInterface,
+                               RuntimeValue, UserDefinedElements, UserFunctionDescriptor,
+                               UserFunctionExecutor};
 
 use parity_wasm::interpreter;
 use parity_wasm::elements;
@@ -41,7 +42,6 @@ impl UserFunctionExecutor for MyExecutor {
                 Ok(None)
             }
 
-
             _ => Err(Error::Trap("not implemented".into()).into()),
         }
     }
@@ -52,11 +52,12 @@ fn main() {
     let matches = App::new("nanowasm")
         .version("0.1")
         .about("A standalone WebAssembly interpreter in Rust.")
-        .arg(Arg::with_name("file")
-             .required(true))
+        .arg(Arg::with_name("file").required(true))
         .get_matches();
 
-    let input_file = matches.value_of("file").expect("file argument is required; should never happen.");
+    let input_file = matches
+        .value_of("file")
+        .expect("file argument is required; should never happen.");
 
     println!("Input file is {}", input_file);
 
@@ -73,10 +74,9 @@ fn main() {
     let empty_module = ModuleInstance::new(
         Weak::new(),
         "foo_module".to_owned(),
-        parity_wasm::elements::Module::new(vec![])
+        parity_wasm::elements::Module::new(vec![]),
     ).unwrap();
     let native = interpreter::native_module(Arc::new(empty_module), elts).unwrap();
-
 
     // Load and instantiate given file
     let module = parity_wasm::deserialize_file(input_file).unwrap();
@@ -84,10 +84,10 @@ fn main() {
 
     let m = interpreter::ProgramInstance::new();
     let foo_instance = m.insert_loaded_module("foo_module", native).unwrap();
-    
+
     let inc_instance = m.add_module("inc", module, None)
         .expect("Failed to instantiate module loaded from file");
-    
+
     //let start_res = inc_instance.run_start_function().unwrap();
     //println!("Result of start function: {:?}", start_res);
 }
