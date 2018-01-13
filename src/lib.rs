@@ -622,6 +622,19 @@ struct GlobalAddress(usize);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ModuleAddress(usize);
 
+/// For forward jumps (if, block) we need to know where to jump TO.
+/// Serialized wasm doesn't store this information explicitly,
+/// and searching for it mid-execution is a wasteful PITA,
+/// so we find it ahead of time and then store it when the
+/// function is instantiated.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct JumpTarget {
+    block_start_instruction: usize,
+    block_end_instruction: usize,
+    /// Only used for if/else statements.
+    else_instruction: usize,
+}
+
 /// Contains all the information needed to execute a function.
 #[derive(Debug, Clone)]
 pub struct FuncInstance {
@@ -629,6 +642,80 @@ pub struct FuncInstance {
     locals: Vec<elements::ValueType>,
     body: Vec<elements::Opcode>,
     module: ModuleAddress,
+    /// A vec of jump targets sorted by source instruction,
+    /// so we can just binary-search in it.  A HashMap would
+    /// work too, but I suspect this is faster?  And is trivial
+    /// to construct, so.
+    jump_table: Vec<JumpTarget>,
+}
+
+impl FuncInstance {
+    /// Iterate through a function's body and construct the jump table for it.
+    /// If we find a block instruction, the target is the matching end instruction.
+    /// 
+    /// Panics on invalid (improperly nested) blocks.
+    fn compute_jump_table(body: &[elements::Opcode]) -> Vec<JumpTarget> {
+        use elements::Opcode::*;
+        // TODO: I would be sort of happier properly walking a sequence, OCaml
+        // style, but oh well.
+        let mut offset = 0;
+        let mut accm = vec![];
+        while offset < body.len() {
+            let op = &body[offset];
+            println!("Computing jump table: {}, {:?}", offset, op);
+            match *op {
+                Block(_) => {
+                    offset = FuncInstance::find_block_close(body, offset, &mut accm);
+                },
+                If(_) => {
+                    offset = FuncInstance::find_block_close(body, offset, &mut accm);
+                }
+                _ => (),
+            }
+            offset += 1;
+        }
+        accm
+    }
+
+    /// Recursively walk through opcodes starting from the given offset, and
+    /// accumulate jump targets into the given vec.  This way we only have
+    /// to walk the function once.
+    ///
+    /// Returns the last instruction index of the block, so you can start
+    /// there and go on to find the next block.
+    fn find_block_close(body: &[elements::Opcode], start_offset: usize, accm: &mut Vec<JumpTarget>) -> usize {
+        use elements::Opcode::*;
+        use std::usize;
+        let mut offset = start_offset;
+        // TODO: Potentially invalid here, but, okay.
+        let mut else_offset = usize::MAX;
+        loop {
+            let op = &body[offset];
+            match *op {
+                elements::Opcode::End => {
+                    // Found matching end, yay.
+                    let jt = JumpTarget {
+                        block_start_instruction: start_offset,
+                        block_end_instruction: offset,
+                        else_instruction: else_offset,
+                    };
+                    accm.push(jt);
+                    return offset;
+                }
+                elements::Opcode::Else => {
+                    else_offset = offset;
+                }
+                // Opening another block, recurse.
+                elements::Opcode::Block(_) => {
+                    offset = FuncInstance::find_block_close(body, offset, accm);
+                }
+                _ => (),
+            }
+            offset += 1;
+            assert!(offset < body.len(), "Unclosed block, should never happen!");
+        }
+        unreachable!();
+    }
 }
 
 /// Relates all the local indices to globals, functions etc.
@@ -779,6 +866,7 @@ impl Interpreter {
                 locals: func.locals.clone(),
                 body: func.body.clone(),
                 module: module_instance_address,
+                jump_table: FuncInstance::compute_jump_table(&func.body),
             };
             println!("Function: {:?}", instance);
             self.state.funcs.push(instance);
@@ -846,18 +934,42 @@ impl Interpreter {
 
             println!("Op: {:?}", op);
             match *op {
-                Unreachable => unreachable!(),
+                Unreachable => panic!("Unreachable?"),
                 Nop => (),
-                Block(blocktype) => (),
+                Block(blocktype) => {
+                    let jump_target_idx = func.jump_table.binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
+                        .expect("Cannot find matching jump table for block statement");
+                    let jump_target = &func.jump_table[jump_target_idx];
+                    frame.push_label(BlockLabel(jump_target.block_end_instruction));
+                },
                 Loop(blocktype) => {
                     // Instruction index to jump to on branch or such.
                     let end_idx = frame.ip + 1;
                     frame.push_label(BlockLabel(end_idx));
                 },
                 If(blocktype) => {
+                    let vl = frame.pop_as::<i32>();
+                    let jump_target_idx = func.jump_table.binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
+                        .expect("Cannot find matching jump table for if statement");
+                    let jump_target = &func.jump_table[jump_target_idx];
+                    frame.push_label(BlockLabel(jump_target.block_end_instruction));
+                    if vl != 0 {
+                        // continue
+                    } else {
+                        // Jump to instruction after the else section
+                        frame.ip = jump_target.else_instruction + 1;
+                    }
                 },
-                Else => (),
-                End => (),
+                Else => {
+                    // Done with if part of the statement, 
+                    // skip to (just after) the end.
+                    let target_ip = frame.pop_label(0);
+                    frame.ip = target_ip.0 + 1;
+                },
+                End => {
+                    // Done with whatever block we're in
+                    frame.pop_label(0);
+                },
                 Br(i) => {
                     let target_ip = frame.pop_label(i as usize);
                     frame.ip = target_ip.0;
@@ -900,6 +1012,7 @@ impl Interpreter {
                         for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
                             assert_eq!(param.get_type(), *desired_type);
                         }
+                        // Some(Value::I32(3))
                         Interpreter::exec(store, state, function_addr, params_slice)
                     };
 
