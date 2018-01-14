@@ -1245,29 +1245,75 @@ impl Interpreter {
                 I32GeU => {
                     Interpreter::exec_binop(frame, |x, y| u32::ge(&x, &y));
                 }
-                I64Eqz => (),
-                I64Eq => (),
-                I64Ne => (),
-                I64LtS => (),
-                I64LtU => (),
-                I64GtS => (),
-                I64GtU => (),
-                I64LeS => (),
-                I64LeU => (),
-                I64GeS => (),
-                I64GeU => (),
-                F32Eq => (),
-                F32Ne => (),
-                F32Lt => (),
-                F32Gt => (),
-                F32Le => (),
-                F32Ge => (),
-                F64Eq => (),
-                F64Ne => (),
-                F64Lt => (),
-                F64Gt => (),
-                F64Le => (),
-                F64Ge => (),
+                I64Eqz => {
+                    Interpreter::exec_uniop::<i64, bool, _>(frame, |x| i64::eq(&x, &0));
+                }
+                I64Eq => {
+                    Interpreter::exec_binop(frame, |x, y| i64::eq(&x, &y));
+                }
+                I64Ne => {
+                    Interpreter::exec_binop(frame, |x, y| i64::ne(&x, &y));
+                }
+                I64LtS => {
+                    Interpreter::exec_binop(frame, |x, y| i64::lt(&x, &y));
+                }
+                I64LtU => {
+                    Interpreter::exec_binop(frame, |x, y| u64::lt(&x, &y));
+                }
+                I64GtS => {
+                    Interpreter::exec_binop(frame, |x, y| i64::gt(&x, &y));
+                }
+                I64GtU => {
+                    Interpreter::exec_binop(frame, |x, y| u64::gt(&x, &y));
+                }
+                I64LeS => {
+                    Interpreter::exec_binop(frame, |x, y| i64::le(&x, &y));
+                }
+                I64LeU => {
+                    Interpreter::exec_binop(frame, |x, y| u64::le(&x, &y));
+                }
+                I64GeS => {
+                    Interpreter::exec_binop(frame, |x, y| i64::ge(&x, &y));
+                }
+                I64GeU => {
+                    Interpreter::exec_binop(frame, |x, y| u64::ge(&x, &y));
+                }
+                F32Eq => {
+                    Interpreter::exec_binop(frame, |x, y| f32::eq(&x, &y));
+                }
+                F32Ne => {
+                    Interpreter::exec_binop(frame, |x, y| f32::ne(&x, &y));
+                }
+                F32Lt => {
+                    Interpreter::exec_binop(frame, |x, y| f32::lt(&x, &y));
+                }
+                F32Gt => {
+                    Interpreter::exec_binop(frame, |x, y| f32::gt(&x, &y));
+                }
+                F32Le => {
+                    Interpreter::exec_binop(frame, |x, y| f32::le(&x, &y));
+                }
+                F32Ge => {
+                    Interpreter::exec_binop(frame, |x, y| f32::ge(&x, &y));
+                }
+                F64Eq => {
+                    Interpreter::exec_binop(frame, |x, y| f64::eq(&x, &y));
+                }
+                F64Ne => {
+                    Interpreter::exec_binop(frame, |x, y| f64::ne(&x, &y));
+                }
+                F64Lt => {
+                    Interpreter::exec_binop(frame, |x, y| f64::lt(&x, &y));
+                }
+                F64Gt => {
+                    Interpreter::exec_binop(frame, |x, y| f64::gt(&x, &y));
+                }
+                F64Le => {
+                    Interpreter::exec_binop(frame, |x, y| f64::le(&x, &y));
+                }
+                F64Ge => {
+                    Interpreter::exec_binop(frame, |x, y| f64::ge(&x, &y));
+                }
                 I32Clz => {
                     Interpreter::exec_uniop(frame, i32::leading_zeros);
                 }
