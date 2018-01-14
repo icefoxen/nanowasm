@@ -900,6 +900,14 @@ impl Interpreter {
         module_instance.functions[idx]
     }
 
+    /// Returns a FunctionAddress from a given index
+    fn resolve_memory(state: &State, module_addr: ModuleAddress) -> MemoryAddress {
+        assert!(module_addr.0 < state.module_instances.len());
+        let module_instance = &state.module_instances[module_addr.0];
+        assert!(module_instance.memory.is_some());
+        module_instance.memory.unwrap()
+    }
+
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
@@ -914,6 +922,7 @@ impl Interpreter {
         let global_addr = Interpreter::resolve_global(state, module_addr, idx);
         globals[global_addr.0].value
     }
+
     /// Sets a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds or if the type of the new
@@ -929,6 +938,11 @@ impl Interpreter {
         assert!(globals[global_addr.0].mutable);
         assert_eq!(globals[global_addr.0].variable_type, vl.get_type());
         globals[global_addr.0].value = vl;
+    }
+
+    fn set_memory(mems: &mut [Memory], state: &State, module_addr: ModuleAddress, offset: usize, value: Value) {
+        let memory_address = Interpreter::resolve_memory(state, module_addr);
+        unimplemented!();
     }
 
     /// Builder function to add a loaded and validated module to the
@@ -1146,7 +1160,7 @@ impl Interpreter {
                 GetLocal(i) => {
                     let i = i as usize;
                     let vl = frame.get_local(i as usize);
-                    frame.value_stack.push(vl);
+                    frame.push(vl);
                 }
                 SetLocal(i) => {
                     let i = i as usize;
@@ -1168,7 +1182,10 @@ impl Interpreter {
                     let vl = frame.pop();
                     Interpreter::set_global(&mut store.globals, &state, func.module, i, vl);
                 }
-                I32Load(i1, i2) => (),
+                I32Load(i1, i2) => {
+                    let vl = frame.pop();
+                    unimplemented!();
+                },
                 I64Load(i1, i2) => (),
                 F32Load(i1, i2) => (),
                 F64Load(i1, i2) => (),
@@ -1551,16 +1568,36 @@ impl Interpreter {
                 F32ConvertUI32 => (),
                 F32ConvertSI64 => (),
                 F32ConvertUI64 => (),
-                F32DemoteF64 => (),
+                F32DemoteF64 => {
+                    Interpreter::exec_uniop::<f64, _, _>(frame, |f| f as f32);
+                },
                 F64ConvertSI32 => (),
                 F64ConvertUI32 => (),
                 F64ConvertSI64 => (),
                 F64ConvertUI64 => (),
-                F64PromoteF32 => (),
-                I32ReinterpretF32 => (),
-                I64ReinterpretF64 => (),
-                F32ReinterpretI32 => (),
-                F64ReinterpretI64 => (),
+                F64PromoteF32 => {
+                    Interpreter::exec_uniop::<f32, _, _>(frame, f64::from);
+                },
+                I32ReinterpretF32 => {
+                    // TODO: Check that this is going the correct direction,
+                    // i32 -> f32
+                    Interpreter::exec_uniop(frame, f32::from_bits);
+                }
+                I64ReinterpretF64 => {
+                    // TODO: Check that this is going the correct direction,
+                    // i64 -> f64
+                    Interpreter::exec_uniop(frame, f64::from_bits);
+                },
+                F32ReinterpretI32 => {
+                    // TODO: Check that this is going the correct direction,
+                    // f32 -> i32
+                    Interpreter::exec_uniop(frame, f32::to_bits);
+                }
+                F64ReinterpretI64 => {
+                    // TODO: Check that this is going the correct direction,
+                    // f64 -> i64
+                    Interpreter::exec_uniop(frame, f64::to_bits);
+                }
             }
             frame.ip += 1;
         }
