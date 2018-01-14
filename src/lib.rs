@@ -1,8 +1,10 @@
 //! An attempt at creating an embeddable wasm interpreter that's
 //! bloody easier to use and debug than the `parity-wasm` one.
 
+extern crate byteorder;
 extern crate parity_wasm;
 
+use byteorder::ByteOrder;
 use parity_wasm::elements;
 
 use std::collections::HashMap;
@@ -900,7 +902,8 @@ impl Interpreter {
         module_instance.functions[idx]
     }
 
-    /// Returns a FunctionAddress from a given index
+    /// Returns a MemoryAddress for the Memory of a given ModuleInstance.
+    /// Modules can currently only have one Memory, so it's pretty easy.
     fn resolve_memory(state: &State, module_addr: ModuleAddress) -> MemoryAddress {
         assert!(module_addr.0 < state.module_instances.len());
         let module_instance = &state.module_instances[module_addr.0];
@@ -940,9 +943,18 @@ impl Interpreter {
         globals[global_addr.0].value = vl;
     }
 
-    fn set_memory(mems: &mut [Memory], state: &State, module_addr: ModuleAddress, offset: usize, value: Value) {
+    fn set_memory_with<F, N>(mems: &mut [Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F, vl: N) where F: Fn(&mut [u8], N) {
         let memory_address = Interpreter::resolve_memory(state, module_addr);
-        unimplemented!();
+        let mem = &mut mems[memory_address.0];
+        assert!(offset + std::mem::size_of::<N>() < mem.data.len());
+        f(&mut mem.data[offset..], vl)
+    }
+
+    fn get_memory_with<F, N>(mems: &[Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F) -> N where F: Fn(&[u8]) -> N {
+        let memory_address = Interpreter::resolve_memory(state, module_addr);
+        let mem = &mems[memory_address.0];
+        assert!(offset + std::mem::size_of::<N>() < mem.data.len());
+        f(&mem.data[offset..])
     }
 
     /// Builder function to add a loaded and validated module to the
@@ -1018,6 +1030,34 @@ impl Interpreter {
 
     fn exec_const(frame: &mut StackFrame, vl: Value) {
         frame.push(vl);
+    }
+
+    /// Executes a load instruction, using the given function to 
+    /// convert the memory's `&[u8]` into the given Value type.
+    fn exec_load<F, N>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
+        where F: Fn(&[u8]) -> N,
+              N: Into<Value> {
+        let address = frame.pop_as::<i32>();
+        let effective_address = address + offset as i32;
+        let mem_contents = Interpreter::get_memory_with(
+            &mut store.mems, &state, module, 
+            effective_address as usize, 
+            func).into();
+        frame.push(mem_contents);
+    }
+
+    /// Executes a store instruction, using the given function to 
+    /// write the Value type into the memory's `&mut [u8]`
+    fn exec_store<F, N>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
+        where F: Fn(&mut [u8], N),
+              N: From<Value> {
+        let vl = frame.pop_as::<N>();
+        let address = frame.pop_as::<i32>();
+        let effective_address = address + offset as i32;
+        Interpreter::set_memory_with(
+            &mut store.mems, &state, module, 
+            effective_address as usize, 
+            func, vl);
     }
 
     /// Helper function for running binary operations that pop
@@ -1182,32 +1222,45 @@ impl Interpreter {
                     let vl = frame.pop();
                     Interpreter::set_global(&mut store.globals, &state, func.module, i, vl);
                 }
-                I32Load(i1, i2) => {
-                    let vl = frame.pop();
-                    unimplemented!();
+                I32Load(offset, _align) => {
+                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i32);
                 },
-                I64Load(i1, i2) => (),
-                F32Load(i1, i2) => (),
-                F64Load(i1, i2) => (),
-                I32Load8S(i1, i2) => (),
-                I32Load8U(i1, i2) => (),
-                I32Load16S(i1, i2) => (),
-                I32Load16U(i1, i2) => (),
-                I64Load8S(i1, i2) => (),
-                I64Load8U(i1, i2) => (),
-                I64Load16S(i1, i2) => (),
-                I64Load16U(i1, i2) => (),
-                I64Load32S(i1, i2) => (),
-                I64Load32U(i1, i2) => (),
-                I32Store(i1, i2) => (),
-                I64Store(i1, i2) => (),
-                F32Store(i1, i2) => (),
-                F64Store(i1, i2) => (),
-                I32Store8(i1, i2) => (),
-                I32Store16(i1, i2) => (),
-                I64Store8(i1, i2) => (),
-                I64Store16(i1, i2) => (),
-                I64Store32(i1, i2) => (),
+                I64Load(offset, _align) => {
+                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i64);
+                },
+                F32Load(offset, _align) => {
+                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_f32);
+                },
+                F64Load(offset, _align) => {
+                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_f64);
+                },
+                I32Load8S(offset, _align) => (),
+                I32Load8U(offset, _align) => (),
+                I32Load16S(offset, _align) => (),
+                I32Load16U(offset, _align) => (),
+                I64Load8S(offset, _align) => (),
+                I64Load8U(offset, _align) => (),
+                I64Load16S(offset, _align) => (),
+                I64Load16U(offset, _align) => (),
+                I64Load32S(offset, _align) => (),
+                I64Load32U(offset, _align) => (),
+                I32Store(offset, _align) => {
+                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
+                },
+                I64Store(offset, _align) => {
+                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i64);
+                },
+                F32Store(offset, _align) => {
+                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_f32);
+                },
+                F64Store(offset, _align) => {
+                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_f64);
+                },
+                I32Store8(offset, _align) => (),
+                I32Store16(offset, _align) => (),
+                I64Store8(offset, _align) => (),
+                I64Store16(offset, _align) => (),
+                I64Store32(offset, _align) => (),
                 CurrentMemory(b) => (),
                 GrowMemory(b) => (),
                 I32Const(i) => Interpreter::exec_const(frame, i.into()),

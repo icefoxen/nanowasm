@@ -6,3 +6,4 @@ authors = ["Simon Heath <icefoxen@gmail.com>"]
 [dependencies]
 parity-wasm = "0.19"
 clap = "2"
+byteorder = "1"
