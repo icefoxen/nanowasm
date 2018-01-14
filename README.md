@@ -4,25 +4,23 @@ A small standalone WebAssembly interpreter in Rust
 
 # Goals
 
-This is a hobby project, not intended to be a professional-grade tool.  But if it gets to that point, great!  I think a small,
-lightweight interpreter would be really useful for things like embedding, running unit tests on generated wasm code, as an
-extension system, etc.
+This is a hobby project, not intended to be a professional-grade tool.  But if it gets to that point, great!  I think a small, lightweight interpreter would be really useful for things like embedding, running unit tests on generated wasm code, as an extension system, etc.
 
 The road map is, more or less in order:
 
  * Implement all of wasm32 1.0 core correctly, passing standard tests and fuzzing
  * Make it *easy* to run as a standalone interpreter, or embedded in other programs
- * Make it *easy* to add custom modules written in Rust
+ * Make it *easy* to embed in Rust programs and extend with custom modules
  * Make it *easy* to run Rust code built with `no_std` for the wasm32-unknown-unknown target, and provide a basic console API
- * Nice debugging tools?
  * Make it reasonably fast?
- * JIT???
- * Load custom modules written in Rust or C as DLL's???
+ * Nice debugging tools?
+ * JIT?  Either using LLVM or writing my own; I kind of want to write my own for the experience.
+ * Load custom modules from DLL's written in Rust or C???
 
 # Non-goals
 
- * Run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) it's little-endian.
- * Zero use of `unsafe`; if we can make a *significant* performance win with unsafe code, we should.  Properly-validated WebAssembly code should be safe itself.  Naturally, not using unsafe would be best.
+ * Don't intend to run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) it's little-endian.  Since I kinda want to make it a JIT then it will be platform-specific anyway.
+ * Don't intend to never use `unsafe`; if we can make a *significant* performance win with unsafe code, we should.  Properly-validated WebAssembly code should be safe itself.  Naturally, not using unsafe would be best.
 
 
 # Building programs
@@ -48,6 +46,8 @@ This should create a `inc.wasm` program which is what you can actually load and 
 ```
 cargo run -- test_programs/inc.wasm
 ```
+
+...except the bin target doesn't actually use the interpreter yet XD
 
 # Similar projects
 
