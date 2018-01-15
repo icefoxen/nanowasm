@@ -199,6 +199,73 @@ impl From<bool> for Value {
     }
 }
 
+/// A trait to say "you can convert X to this type, wrapping numbers".
+/// aka, just `as`.
+/// Like From but doesn't promise to preserve all data.
+/// This should already exist, dammit.
+/// Num crate is working on it: <https://github.com/rust-num/num/issues/183>
+trait Wrap<T> {
+    fn wrap(self) -> T;
+}
+
+/// Stolen wholesale from parity-wasm
+/// `src/interpreter/value.rs`
+macro_rules! impl_wrap_into {
+	($from: ident, $into: ident) => {
+		impl Wrap<$into> for $from {
+			fn wrap(self) -> $into {
+				self as $into
+			}
+		}
+	}
+}
+
+impl_wrap_into!(i32, i8);
+impl_wrap_into!(i32, i16);
+impl_wrap_into!(i64, i8);
+impl_wrap_into!(i64, i16);
+impl_wrap_into!(i64, i32);
+impl_wrap_into!(i64, f32);
+impl_wrap_into!(u64, f32);
+
+
+/// Convert one type to another by extending with leading zeroes
+/// or one's (depending on destination type)
+pub trait Extend<T> {
+	/// Convert one type to another by extending with leading zeroes.
+	fn extend(self) -> T;
+}
+
+/// Also stolen from parity-wasm
+macro_rules! impl_extend_into {
+	($from: ident, $into: ident) => {
+		impl Extend<$into> for $from {
+			fn extend(self) -> $into {
+				self as $into
+			}
+		}
+	}
+}
+
+impl_extend_into!(i8, i32);
+impl_extend_into!(u8, i32);
+impl_extend_into!(i16, i32);
+impl_extend_into!(u16, i32);
+impl_extend_into!(i8, i64);
+impl_extend_into!(u8, i64);
+impl_extend_into!(i16, i64);
+impl_extend_into!(u16, i64);
+impl_extend_into!(i32, i64);
+impl_extend_into!(u32, i64);
+impl_extend_into!(u32, u64);
+impl_extend_into!(i32, f32);
+impl_extend_into!(i32, f64);
+impl_extend_into!(u32, f32);
+impl_extend_into!(u32, f64);
+impl_extend_into!(i64, f64);
+impl_extend_into!(u64, f64);
+impl_extend_into!(f32, f64);
+
 // /// Memory for a variable.
 // #[derive(Debug, Copy, Clone, PartialEq)]
 // pub struct VariableSlot {
@@ -687,19 +754,19 @@ impl StackFrame {
 
 /// Function address type; refers to a particular `FuncInstance` in the Store.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct FunctionAddress(usize);
+pub struct FunctionAddress(usize);
 /// Table address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct TableAddress(usize);
+pub struct TableAddress(usize);
 /// Memory address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct MemoryAddress(usize);
+pub struct MemoryAddress(usize);
 /// Global address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct GlobalAddress(usize);
+pub struct GlobalAddress(usize);
 /// Module instance address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ModuleAddress(usize);
+pub struct ModuleAddress(usize);
 
 /// For forward jumps (if, block) we need to know where to jump TO.
 /// Serialized wasm doesn't store this information explicitly,
@@ -879,7 +946,7 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             store: Store::default(),
             state: State::default(),
@@ -966,7 +1033,7 @@ impl Interpreter {
     ///
     /// We could load all the modules in arbitrary order, then validate+link
     /// them at the end, but meh.
-    fn with_module(mut self, module: LoadedModule) -> Self {
+    pub fn with_module(mut self, module: LoadedModule) -> Self {
         assert!(module.validated);
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
         let mut functions = vec![];
@@ -1046,12 +1113,45 @@ impl Interpreter {
         frame.push(mem_contents);
     }
 
+
+    /// Executes a load instruction, using the given function to 
+    /// convert the memory's `&[u8]` into the the SourceN type,
+    /// then sign-extending it (based on whether it's signed or unsigned)
+    /// into DestN.
+    fn exec_load_extend<F, SourceN, DestN>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
+        where F: Fn(&[u8]) -> SourceN,
+              SourceN: Extend<DestN>,
+              DestN: Into<Value> {
+        let address = frame.pop_as::<i32>();
+        let effective_address = address + offset as i32;
+        let mem_contents = Interpreter::get_memory_with(
+            &mut store.mems, &state, module, 
+            effective_address as usize, 
+            func).extend().into();
+        frame.push(mem_contents);
+    }
+
+
     /// Executes a store instruction, using the given function to 
     /// write the Value type into the memory's `&mut [u8]`
     fn exec_store<F, N>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
         where F: Fn(&mut [u8], N),
               N: From<Value> {
         let vl = frame.pop_as::<N>();
+        let address = frame.pop_as::<i32>();
+        let effective_address = address + offset as i32;
+        Interpreter::set_memory_with(
+            &mut store.mems, &state, module, 
+            effective_address as usize, 
+            func, vl);
+    }
+
+    /// Wraps/truncates the the Value on the stack from the given SourceN type
+    /// to the DestN type, then stores it in memory.
+    fn exec_store_wrap<F, SourceN, DestN>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
+        where F: Fn(&mut [u8], DestN),
+              SourceN: From<Value> + Wrap<DestN> {
+        let vl: DestN = frame.pop_as::<SourceN>().wrap();
         let address = frame.pop_as::<i32>();
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
@@ -1086,7 +1186,7 @@ impl Interpreter {
     /// Actually do the interpretation of the given function, assuming
     /// that a stack frame already exists for it with args and locals
     /// and such
-    fn exec(
+    pub fn exec(
         store: &mut Store,
         state: &State,
         func: FunctionAddress,
@@ -1141,6 +1241,7 @@ impl Interpreter {
                 }
                 End => {
                     // Done with whatever block we're in
+                    // TODO: This is probably incorrect.
                     frame.pop_label(0);
                 }
                 Br(i) => {
@@ -1234,16 +1335,36 @@ impl Interpreter {
                 F64Load(offset, _align) => {
                     Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_f64);
                 },
-                I32Load8S(offset, _align) => (),
-                I32Load8U(offset, _align) => (),
-                I32Load16S(offset, _align) => (),
-                I32Load16U(offset, _align) => (),
-                I64Load8S(offset, _align) => (),
-                I64Load8U(offset, _align) => (),
-                I64Load16S(offset, _align) => (),
-                I64Load16U(offset, _align) => (),
-                I64Load32S(offset, _align) => (),
-                I64Load32U(offset, _align) => (),
+                I32Load8S(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, i8, i32>(frame, store, state, func.module, offset, |mem| mem[0] as i8);
+                },
+                I32Load8U(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, u8, i32>(frame, store, state, func.module, offset, |mem| mem[0] as u8);
+                },
+                I32Load16S(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, i16, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i16);
+                },
+                I32Load16U(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, u16, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u16);
+                },
+                I64Load8S(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, i8, i64>(frame, store, state, func.module, offset, |mem| mem[0] as i8);
+                },
+                I64Load8U(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, u8, i64>(frame, store, state, func.module, offset, |mem| mem[0] as u8);
+                },
+                I64Load16S(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, i16, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i16);
+                },
+                I64Load16U(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, u16, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u16);
+                },
+                I64Load32S(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, i32, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i32);
+                },
+                I64Load32U(offset, _align) => {
+                    Interpreter::exec_load_extend::<_, u32, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u32);
+                },
                 I32Store(offset, _align) => {
                     Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
                 },
@@ -1256,11 +1377,23 @@ impl Interpreter {
                 F64Store(offset, _align) => {
                     Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_f64);
                 },
-                I32Store8(offset, _align) => (),
-                I32Store16(offset, _align) => (),
-                I64Store8(offset, _align) => (),
-                I64Store16(offset, _align) => (),
-                I64Store32(offset, _align) => (),
+                I32Store8(offset, _align) => {
+                    // `byteorder` doesn't have write_i8 since it's a bit redundant,
+                    // so we make our own.
+                    Interpreter::exec_store_wrap::<_, i32, i8>(frame, store, state, func.module, offset, |mem, x| mem[0] = x as u8);
+                },
+                I32Store16(offset, _align) => {
+                    Interpreter::exec_store_wrap::<_, i32, i16>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i16);
+                },
+                I64Store8(offset, _align) => {
+                    Interpreter::exec_store_wrap::<_, i64, i8>(frame, store, state, func.module, offset, |mem, x| mem[0] = x as u8);
+                },
+                I64Store16(offset, _align) => {
+                    Interpreter::exec_store_wrap::<_, i64, i16>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i16);
+                },
+                I64Store32(offset, _align) => {
+                    Interpreter::exec_store_wrap::<_, i64, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
+                },
                 CurrentMemory(b) => (),
                 GrowMemory(b) => (),
                 I32Const(i) => Interpreter::exec_const(frame, i.into()),
@@ -1661,7 +1794,7 @@ impl Interpreter {
     }
 
     /// A nice shortcut to run `exec()` with appropriate values.
-    fn run(&mut self, func: FunctionAddress, args: &[Value]) -> Option<Value> {
+    pub fn run(&mut self, func: FunctionAddress, args: &[Value]) -> Option<Value> {
         let state = &self.state;
         let store = &mut self.store;
         Interpreter::exec(store, state, func, args)
