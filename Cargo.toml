@@ -2,6 +2,10 @@
 name = "nanowasm"
 version = "0.0.1"
 authors = ["Simon Heath <icefoxen@gmail.com>"]
+description = "A small, stand-alone WebAssembly interpreter."
+license = "Apache-2.0/MIT"
+documentation = "https://docs.rs/nanowasm/"
+repository = "https://github.com/icefoxen/nanowasm"
 
 [dependencies]
 parity-wasm = "0.20"
