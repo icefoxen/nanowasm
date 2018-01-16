@@ -1739,7 +1739,7 @@ impl Interpreter {
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::max);
                 }
                 F64Copysign => (),
-                I32WarpI64 => (),
+                I32WrapI64 => (),
                 I32TruncSF32 => (),
                 I32TruncUF32 => (),
                 I32TruncSF64 => (),
