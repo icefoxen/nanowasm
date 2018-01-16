@@ -1575,25 +1575,18 @@ impl Interpreter {
                 }
                 I32Shl => {
                     use std::ops::*;
-                    // TODO: Figure out the correct overflow semantics to use
                     Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shl);
                 }
                 I32ShrS => {
-                    use std::ops::*;
-                    // TODO: Figure out the correct overflow semantics to use
-                    // Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shr);
+                    Interpreter::exec_binop::<i32, u32, _, _>(frame, i32::wrapping_shr);
                 }
                 I32ShrU => {
-                    use std::ops::*;
-                    // TODO: Figure out the correct overflow semantics to use
-                    // Interpreter::exec_binop::<i32, i32, _, _>(frame, i32::shr);
+                    Interpreter::exec_binop::<u32, u32, _, _>(frame, u32::wrapping_shr);
                 }
                 I32Rotl => {
-                    use std::ops::*;
                     Interpreter::exec_binop(frame, i32::rotate_left);
                 }
                 I32Rotr => {
-                    use std::ops::*;
                     Interpreter::exec_binop(frame, i32::rotate_right);
                 }
                 I64Clz => {
@@ -1642,22 +1635,24 @@ impl Interpreter {
                     use std::ops::*;
                     Interpreter::exec_binop::<i64, i64, _, _>(frame, i64::shl);
                 }
-                I64ShrS => (),
-                I64ShrU => (),
+                I64ShrS => {
+                    Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::wrapping_shr);
+                },
+                I64ShrU => {
+                    Interpreter::exec_binop::<u64, u32, _, _>(frame, u64::wrapping_shr);
+                },
                 I64Rotl => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::rotate_left);
                 }
                 I64Rotr => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::rotate_right);
                 }
                 F32Abs => {
                     Interpreter::exec_uniop::<f32, _, _>(frame, f32::abs);
                 }
                 F32Neg => {
-                    // TODO: Double-check this for correctness
-                    Interpreter::exec_uniop::<f32, _, _>(frame, |f| -f);
+                    use std::ops::Neg;
+                    Interpreter::exec_uniop::<f32, _, _>(frame, Neg::neg);
                 }
                 F32Ceil => {
                     Interpreter::exec_uniop::<f32, _, _>(frame, f32::ceil);
@@ -1707,8 +1702,8 @@ impl Interpreter {
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::abs);
                 }
                 F64Neg => {
-                    // TODO: Double-check this for correctness
-                    Interpreter::exec_uniop::<f64, _, _>(frame, |f| -f);
+                    use std::ops::Neg;
+                    Interpreter::exec_uniop::<f64, _, _>(frame, Neg::neg);
                 }
                 F64Ceil => {
                     use std::ops::*;
