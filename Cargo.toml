@@ -9,9 +9,12 @@ repository = "https://github.com/icefoxen/nanowasm"
 readme = "README.md"
 keywords = ["webassembly", "wasm", "interpreter"]
 categories = ["emulators", "api-bindings"]
+
+[badges]
 maintenance = { status = "experimental" }
 
 [dependencies]
 parity-wasm = "0.20"
 clap = "2"
 byteorder = "1"
+num = "0.1"

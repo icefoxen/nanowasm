@@ -2,6 +2,7 @@
 //! bloody easier to use and debug than the `parity-wasm` one.
 
 extern crate byteorder;
+extern crate num;
 extern crate parity_wasm;
 
 use byteorder::ByteOrder;
@@ -228,6 +229,42 @@ impl_wrap_into!(i64, i32);
 impl_wrap_into!(i64, f32);
 impl_wrap_into!(u64, f32);
 
+// Misc numerical functions here.
+
+/// fcopysign:
+///
+/// If z1 and z2 have the same sign, then return z1
+/// Else return z1 with negated sign.
+fn copysign<T>(f1: T, f2: T) -> T
+    where T: num::Float {
+    // TODO: Probably doesn't work properly with NaN's?
+    if f1.is_sign_positive() && f2.is_sign_positive()
+        || f1.is_sign_negative() && f2.is_sign_negative() {
+            f1
+        } else {
+            f1.neg()
+        }
+}
+
+/// Truncates the float into the given integer type.
+fn truncate_to_int<From, To>(f1: From) -> To
+    where From: num::Float,
+          To: num::NumCast {
+    // TODO: Needs more correctness checking!  Inf, NaN, etc.
+    // Also not sure NumCast is the right thing to use here but it seems to work.
+    To::from(f1.trunc()).unwrap()
+}
+
+/// Rounds the float into the given integer type.
+fn round_to_int<From, To>(f1: From) -> To
+    where From: num::Float,
+          To: num::NumCast {
+    // TODO: Needs more correctness checking!  Inf, NaN, etc.
+    // Also needs to verify that the rounding behavior is correct.
+    // Also not sure NumCast is the right thing to use here but it seems to work.
+    To::from(f1.round()).unwrap()
+}
+
 
 /// Convert one type to another by extending with leading zeroes
 /// or one's (depending on destination type)
@@ -346,9 +383,7 @@ impl Table {
     /// For a Table it fills it with `FuncIdx(0)`, even
     /// in the case that there IS no function 0.
     fn fill(&mut self, size: u32) {
-        let mut v = Vec::with_capacity(size as usize);
-        v.resize(size as usize, FuncIdx(0));
-        self.data = v;
+        self.data.resize(size as usize, FuncIdx(0));
         self.max = Some(size);
     }
 }
@@ -363,7 +398,7 @@ pub struct Memory {
 }
 
 impl Memory {
-    const MEMORY_PAGE_SIZE: usize = 65_536;
+    const PAGE_SIZE: usize = 65_536;
 
     pub fn new(size: Option<u32>) -> Self {
         let mut mem = Self {
@@ -371,20 +406,33 @@ impl Memory {
             max: None,
         };
         if let Some(size) = size {
-            mem.fill(size);
+            // TODO: Should always be true; use one of num's try_convert
+            // methods or such instead.
+            assert!(size < std::i32::MAX as u32);
+            mem.resize(size as i32);
         }
         mem
     }
 
-    /// Resizes the underlying storage, zero'ing it in the process.
-    fn fill(&mut self, size: u32) {
+    /// The length of the allocated storage, in pages.
+    fn len(&self) -> u32 {
+        (self.data.len() / Self::PAGE_SIZE) as u32
+    }
+
+    /// Resizes the memory by the given delta, in units of `Memory::PAGE_SIZE`.
+    /// That is, if delta is positive, the memory will grow, if negative it will shrink.
+    /// Newly allocated memory is zero'd.
+    fn resize(&mut self, delta: i32) {
         use std::usize;
-        let v_size = usize::checked_mul(Self::MEMORY_PAGE_SIZE, size as usize)
-            .expect("Tried to allocate memory bigger than usize!");
-        let mut v = Vec::with_capacity(v_size);
-        v.resize(v_size, 0);
-        self.data = v;
-        self.max = Some(size);
+        let delta_bytes = i32::checked_mul(Self::PAGE_SIZE as i32, delta)
+            .expect("Asked for more memory than can fit in an i32?");
+        // This assert should always be true if we only ever allocate mem with
+        // this function, buuuuuut...
+        assert!(self.data.len() < std::i32::MAX as usize);
+        let new_size = self.data.len() as i32 + delta_bytes;
+        self.data.resize(new_size as usize, 0);
+        // BUGGO: Augh, the max size semantics here are awful, fix them.
+        //self.max = Some(size);
     }
 }
 
@@ -514,7 +562,7 @@ impl LoadedModule {
 
                 // TODO: It's apparently valid for a memory to have no max size?
                 if let Some(max) = max {
-                    m.mem.fill(max);
+                    m.mem.resize(max as i32);
                 }
             }
 
@@ -574,36 +622,6 @@ impl LoadedModule {
         self.validated = true;
     }
 }
-
-/// A wasm program consisting of multiple modules that
-/// have been loaded, validated and are ready to execute.
-// #[derive(Debug, Clone)]
-// pub struct Program {
-//     modules: Vec<LoadedModule>,
-// }
-
-// impl Program {
-//     fn new() -> Self {
-//         Self {
-//             modules: Vec::new(),
-//         }
-//     }
-
-//     /// Builder function to add a loaded and validated module to the
-//     /// program.
-//     ///
-//     /// Essentially, this does the dynamic linking, and should cause
-//     /// errors to happen if there are invalid/dangling references.
-//     /// So, you have to load all the modules in order of dependencies.
-//     ///
-//     /// We could load all the modules in arbitrary order, then validate+link
-//     /// them at the end, but meh.
-//     fn with_module(mut self, module: LoadedModule) -> Self {
-//         assert!(module.validated);
-//         self.modules.push(module);
-//         self
-//     }
-// }
 
 /// A label to a particular block: just an instruction index.
 /// The label index is implicit in the labels stack; label 0 is always
@@ -1010,6 +1028,7 @@ impl Interpreter {
         globals[global_addr.0].value = vl;
     }
 
+    /// Assigns a value to the given `memory` with the given function.
     fn set_memory_with<F, N>(mems: &mut [Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F, vl: N) where F: Fn(&mut [u8], N) {
         let memory_address = Interpreter::resolve_memory(state, module_addr);
         let mem = &mut mems[memory_address.0];
@@ -1017,6 +1036,7 @@ impl Interpreter {
         f(&mut mem.data[offset..], vl)
     }
 
+    /// Reads data from a slice of the given `memory` with the given function
     fn get_memory_with<F, N>(mems: &[Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F) -> N where F: Fn(&[u8]) -> N {
         let memory_address = Interpreter::resolve_memory(state, module_addr);
         let mem = &mems[memory_address.0];
@@ -1070,30 +1090,6 @@ impl Interpreter {
     fn trap() {
         panic!("Trap occured!  Aieee!")
     }
-
-    /*
-    /// Takes a loaded module, pulls it apart, and shoves all its
-    /// parts into the interpreter's Store.  Produces a ModuleInstance
-    /// which lets you translate indices referring to module resources
-    /// into addresses referring to Store resources.
-    fn instantiate(&mut self, module: &LoadedModule) {
-
-    }
-*/
-
-    // fn run_module_function(&mut self, module: &str, func: FuncIdx, args: &[Value]) {
-    //     // let function = self.funcs.get(func.0)
-    //     //     .expect("Invalid function address, should never happen");
-    //     let function = &self.modules[module].funcs[1];
-    //     let func_type = &self.modules[module].types[function.typeidx.0];
-    //     let frame = StackFrame::from_func(function, &func_type, args);
-    //     println!("Frame is {:?}", frame);
-    //     self.stack.push(frame);
-    //     for op in &function.body {
-    //         println!("Op is {:?}", op);
-    //     }
-    //     self.stack.pop();
-    // }
 
     fn exec_const(frame: &mut StackFrame, vl: Value) {
         frame.push(vl);
@@ -1394,10 +1390,28 @@ impl Interpreter {
                 I64Store32(offset, _align) => {
                     Interpreter::exec_store_wrap::<_, i64, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
                 },
-                CurrentMemory(b) => (),
-                GrowMemory(b) => (),
-                I32Const(i) => Interpreter::exec_const(frame, i.into()),
-                I64Const(l) => Interpreter::exec_const(frame, l.into()),
+                CurrentMemory(_) => {
+                    let module_addr = func.module;
+                    let memory_addr = Interpreter::resolve_memory(state, module_addr);
+                    let mem = &store.mems[memory_addr.0];
+                    frame.push(mem.len().into())
+                },
+                GrowMemory(_) => {
+                    let size_delta = frame.pop_as::<i32>();
+                    let module_addr = func.module;
+                    let memory_addr = Interpreter::resolve_memory(state, module_addr);
+                    let mem = &mut store.mems[memory_addr.0];
+                    let prev_size = mem.len();
+                    // TODO: We should return -1 if enough memory cannot be allocated.
+                    mem.resize(size_delta);
+                    frame.push(prev_size.into());
+                }
+                I32Const(i) => {
+                    Interpreter::exec_const(frame, i.into())
+                }
+                I64Const(l) => {
+                    Interpreter::exec_const(frame, l.into())
+                }
                 // Why oh why are these floats represented as u32 and u64?
                 // Because this is the serialized representation, sigh.
                 // TODO: Fix this somehow so we don't have to keep encoding/
@@ -1685,7 +1699,9 @@ impl Interpreter {
                     use std::ops::*;
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::max);
                 }
-                F32Copysign => (),
+                F32Copysign => {
+                    Interpreter::exec_binop::<f32, f32, _, _>(frame, copysign);
+                },
                 F64Abs => {
                     use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::abs);
@@ -1738,29 +1754,71 @@ impl Interpreter {
                     use std::ops::*;
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::max);
                 }
-                F64Copysign => (),
-                I32WrapI64 => (),
-                I32TruncSF32 => (),
-                I32TruncUF32 => (),
-                I32TruncSF64 => (),
-                I32TruncUF64 => (),
-                I64ExtendSI32 => (),
-                I64ExtendUI32 => (),
-                I64TruncSF32 => (),
-                I64TruncUF32 => (),
-                I64TruncSF64 => (),
-                I64TruncUF64 => (),
-                F32ConvertSI32 => (),
-                F32ConvertUI32 => (),
-                F32ConvertSI64 => (),
-                F32ConvertUI64 => (),
+                F64Copysign => {
+                    Interpreter::exec_binop::<f64, f64, _, _>(frame, copysign);
+                },
+                I32WrapI64 => {
+                    Interpreter::exec_uniop::<i64, i32, _>(frame, Wrap::wrap);
+                },
+                I32TruncSF32 => {
+                    Interpreter::exec_uniop::<f32, i32, _>(frame, truncate_to_int);
+                }
+                I32TruncUF32 => {
+                    // TODO: Verify signedness works here
+                    Interpreter::exec_uniop::<f32, u32, _>(frame, truncate_to_int);
+                }
+                I32TruncSF64 => {
+                    Interpreter::exec_uniop::<f64, i32, _>(frame, truncate_to_int);
+                }
+                I32TruncUF64 => {
+                    // TODO: Verify signedness
+                    Interpreter::exec_uniop::<f64, u32, _>(frame, truncate_to_int);
+                }
+                I64ExtendSI32 => {
+                    Interpreter::exec_uniop::<i32, i64, _>(frame, From::from);
+                }
+                I64ExtendUI32 => {
+                    Interpreter::exec_uniop::<u32, i64, _>(frame, From::from);
+                }
+                I64TruncSF32 => {
+                    Interpreter::exec_uniop::<f32, i64, _>(frame, truncate_to_int);
+                }
+                I64TruncUF32 => {
+                    Interpreter::exec_uniop::<f32, u64, _>(frame, truncate_to_int);
+                }
+                I64TruncSF64 => {
+                    Interpreter::exec_uniop::<f64, i64, _>(frame, truncate_to_int);
+                }
+                I64TruncUF64 => {
+                    Interpreter::exec_uniop::<f64, u64, _>(frame, truncate_to_int);
+                }
+                F32ConvertSI32 => {
+                    Interpreter::exec_uniop::<f32, i32, _>(frame, round_to_int);
+                }
+                F32ConvertUI32 => {
+                    Interpreter::exec_uniop::<f32, u32, _>(frame, round_to_int);
+                }
+                F32ConvertSI64 => {
+                    Interpreter::exec_uniop::<f32, i64, _>(frame, round_to_int);
+                }
+                F32ConvertUI64 => {
+                    Interpreter::exec_uniop::<f32, u64, _>(frame, round_to_int);
+                }
                 F32DemoteF64 => {
                     Interpreter::exec_uniop::<f64, _, _>(frame, |f| f as f32);
                 },
-                F64ConvertSI32 => (),
-                F64ConvertUI32 => (),
-                F64ConvertSI64 => (),
-                F64ConvertUI64 => (),
+                F64ConvertSI32 => {
+                    Interpreter::exec_uniop::<f64, i32, _>(frame, round_to_int);
+                }
+                F64ConvertUI32 => {
+                    Interpreter::exec_uniop::<f64, u32, _>(frame, round_to_int);
+                }
+                F64ConvertSI64 => {
+                    Interpreter::exec_uniop::<f64, i64, _>(frame, round_to_int);
+                }
+                F64ConvertUI64 => {
+                    Interpreter::exec_uniop::<f64, u64, _>(frame, round_to_int);
+                }
                 F64PromoteF32 => {
                     Interpreter::exec_uniop::<f32, _, _>(frame, f64::from);
                 },
