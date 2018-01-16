@@ -1,6 +1,6 @@
 # nanowasm
 
-A small standalone WebAssembly interpreter in Rust
+A small standalone WebAssembly interpreter in Rust.  Currently not really usable, yet.
 
 # Goals
 

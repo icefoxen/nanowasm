@@ -1,9 +1,9 @@
 [package]
 name = "nanowasm"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Simon Heath <icefoxen@gmail.com>"]
 
 [dependencies]
-parity-wasm = "0.19"
+parity-wasm = "0.20"
 clap = "2"
 byteorder = "1"
