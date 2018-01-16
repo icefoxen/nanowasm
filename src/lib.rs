@@ -22,7 +22,7 @@ mod tests;
 /// It also wraps it in `elements::Type`, of which the
 /// only member is a `FunctionType`... that might get extended
 /// by wasm in the future but for now we just omit it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FuncType {
     params: Vec<elements::ValueType>,
     return_type: Option<elements::ValueType>,
@@ -382,8 +382,10 @@ impl Table {
     /// Resizes the underlying storage, zero'ing it in the process.
     /// For a Table it fills it with `FuncIdx(0)`, even
     /// in the case that there IS no function 0.
+    ///
+    /// BUGGO: Table values are allowed to be uninitialized, apparently.
     fn fill(&mut self, size: u32) {
-        self.data.resize(size as usize, FuncIdx(0));
+        self.data.resize(size as usize, FuncIdx(std::usize::MAX));
         self.max = Some(size);
     }
 }
@@ -435,6 +437,11 @@ impl Memory {
         //self.max = Some(size);
     }
 }
+
+/// An index into a module's `Globals` vector.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GlobalIdx(usize);
+
 
 #[derive(Debug, Clone)]
 pub struct Global {
@@ -786,6 +793,7 @@ pub struct GlobalAddress(usize);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ModuleAddress(usize);
 
+
 /// For forward jumps (if, block) we need to know where to jump TO.
 /// Serialized wasm doesn't store this information explicitly,
 /// and searching for it mid-execution is a wasteful PITA,
@@ -890,6 +898,7 @@ impl FuncInstance {
 /// from within a module to the global addresses of the Store.
 #[derive(Debug, Clone)]
 pub struct ModuleInstance {
+    types: Vec<FuncType>,
     functions: Vec<FunctionAddress>,
     table: Option<TableAddress>,
     memory: Option<MemoryAddress>,
@@ -907,7 +916,6 @@ pub struct Store {
     tables: Vec<Table>,
     mems: Vec<Memory>,
     globals: Vec<Global>,
-    // stack: Vec<StackFrame>,
     // We don't have explicit StackFrame's in the Store for Reasons.
     // Borrowing reasons.  Namely, a function needs
     // a mut reference to its StackFrame, naturally.
@@ -923,6 +931,7 @@ pub struct Store {
     // threading applications somewhere down the line
     // (see Python), but for now oh well.
     // Trivially gotten around with unsafe, if we want to.
+    // stack: Vec<StackFrame>,
 }
 
 /// All the *immutable* parts of the interpreter state.
@@ -972,20 +981,33 @@ impl Interpreter {
     }
 
     /// Returns a GlobalAddress from a given index
-    fn resolve_global(state: &State, module_addr: ModuleAddress, idx: usize) -> GlobalAddress {
+    fn resolve_global(state: &State, module_addr: ModuleAddress, idx: GlobalIdx) -> GlobalAddress {
         assert!(module_addr.0 < state.module_instances.len());
         let module_instance = &state.module_instances[module_addr.0];
-        assert!(idx < module_instance.globals.len());
-        module_instance.globals[idx]
+        assert!(idx.0 < module_instance.globals.len());
+        module_instance.globals[idx.0]
     }
 
     /// Returns a FunctionAddress from a given index
-    fn resolve_function(state: &State, module_addr: ModuleAddress, idx: usize) -> FunctionAddress {
+    fn resolve_function(state: &State, module_addr: ModuleAddress, idx: FuncIdx) -> FunctionAddress {
         assert!(module_addr.0 < state.module_instances.len());
         let module_instance = &state.module_instances[module_addr.0];
-        assert!(idx < module_instance.functions.len());
-        module_instance.functions[idx]
+        assert!(idx.0 < module_instance.functions.len());
+        module_instance.functions[idx.0]
     }
+
+    /// Returns a reference to a `FuncType` from a given index
+    ///
+    /// This is somewhat asymmetric with everything else, but there is no
+    /// explicit "type address" type described in wasm, since types are completely
+    /// local to modules.
+    fn resolve_type(state: &State, module_addr: ModuleAddress, idx: TypeIdx) -> &FuncType {
+        assert!(module_addr.0 < state.module_instances.len());
+        let module_instance = &state.module_instances[module_addr.0];
+        assert!(idx.0 < module_instance.types.len());
+        &module_instance.types[idx.0]
+    }
+
 
     /// Returns a MemoryAddress for the Memory of a given ModuleInstance.
     /// Modules can currently only have one Memory, so it's pretty easy.
@@ -996,6 +1018,16 @@ impl Interpreter {
         module_instance.memory.unwrap()
     }
 
+    /// Returns a TableAddress for the Table of a given ModuleInstance.
+    /// Modules can currently only have one Table, so it's pretty easy.
+    fn resolve_table(state: &State, module_addr: ModuleAddress) -> TableAddress {
+        assert!(module_addr.0 < state.module_instances.len());
+        let module_instance = &state.module_instances[module_addr.0];
+        assert!(module_instance.table.is_some());
+        module_instance.table.unwrap()
+    }
+
+    
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
@@ -1005,7 +1037,7 @@ impl Interpreter {
         globals: &[Global],
         state: &State,
         module_addr: ModuleAddress,
-        idx: usize,
+        idx: GlobalIdx,
     ) -> Value {
         let global_addr = Interpreter::resolve_global(state, module_addr, idx);
         globals[global_addr.0].value
@@ -1019,7 +1051,7 @@ impl Interpreter {
         globals: &mut [Global],
         state: &State,
         module_addr: ModuleAddress,
-        idx: usize,
+        idx: GlobalIdx,
         vl: Value,
     ) {
         let global_addr = Interpreter::resolve_global(state, module_addr, idx);
@@ -1060,6 +1092,7 @@ impl Interpreter {
         let table = None;
         let memory = None;
         let globals = vec![];
+        let types = module.types.clone();
         for func in module.funcs.iter() {
             let address = FunctionAddress(self.state.funcs.len());
             let functype = module.types[func.typeidx.0].clone();
@@ -1077,6 +1110,7 @@ impl Interpreter {
         // TODO: table, memory, globals
         // all also need to come from the module!
         let inst = ModuleInstance {
+            types,
             functions,
             table,
             memory,
@@ -1174,9 +1208,35 @@ impl Interpreter {
         where T: From<Value>,
               Res: Into<Value>,
               F: Fn(T) -> Res
-     {
+    {
         let a = frame.pop_as::<T>();
         frame.push(op(a).into());
+    }
+
+    /// Helper function for running a function call.
+    fn exec_call(frame: &mut StackFrame, store: &mut Store, state: &State, function_addr: FunctionAddress) {
+        // Typecheck and get appropriate arguments off the stack to pass
+        // to the called function.
+        let f = &state.funcs[function_addr.0];
+        let return_val = {
+            assert!(f.functype.params.len() <= frame.value_stack.len());
+            let params_end = frame.value_stack.len() - 1;
+            let params_start = params_end - f.functype.params.len();
+            let params_slice = &frame.value_stack[params_start..params_end];
+            for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
+                assert_eq!(param.get_type(), *desired_type);
+            }
+            // Some(Value::I32(3))
+            Interpreter::exec(store, state, function_addr, params_slice)
+        };
+        
+        // Great, now check that the return value matches the stated
+        // return type, and push it to the values stack.
+        let return_type = return_val.map(|v| v.get_type());
+        assert_eq!(return_type, f.functype.return_type);
+        if let Some(v) = return_val {
+            frame.value_stack.push(v);
+        }
     }
 
     /// Actually do the interpretation of the given function, assuming
@@ -1262,34 +1322,34 @@ impl Interpreter {
                     let target_ip = frame.pop_label(target_label);
                     frame.ip = target_ip.0;
                 }
-                Return => (),
+                Return => {
+                    break;
+                },
                 Call(i) => {
                     let i = i as usize;
-                    let function_addr = Interpreter::resolve_function(state, func.module, i);
-                    // Typecheck and get appropriate arguments off the stack to pass
-                    // to the called function.
-                    let f = &state.funcs[function_addr.0];
-                    let return_val = {
-                        assert!(f.functype.params.len() <= frame.value_stack.len());
-                        let params_end = frame.value_stack.len() - 1;
-                        let params_start = params_end - f.functype.params.len();
-                        let params_slice = &frame.value_stack[params_start..params_end];
-                        for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
-                            assert_eq!(param.get_type(), *desired_type);
-                        }
-                        // Some(Value::I32(3))
-                        Interpreter::exec(store, state, function_addr, params_slice)
-                    };
-
-                    // Great, now check that the return value matches the stated
-                    // return type, and push it to the values stack.
-                    let return_type = return_val.map(|v| v.get_type());
-                    assert_eq!(return_type, f.functype.return_type);
-                    if let Some(v) = return_val {
-                        frame.value_stack.push(v);
-                    }
+                    let function_addr = Interpreter::resolve_function(state, func.module, FuncIdx(i));
+                    Interpreter::exec_call(frame, store, state, function_addr);
                 }
-                CallIndirect(i, b) => (),
+                CallIndirect(x, _) => {
+                    // Okay, x is the expected type signature of the function we
+                    // are trying to call.
+                    // So we pop an i32 i from the stack, use that to index into
+                    // the table to get a function index, then call that
+                    // function
+                    let x = x as usize;
+                    let func_type = Interpreter::resolve_type(state, func.module, TypeIdx(x));
+                    let i = frame.pop_as::<u32>() as usize;
+                    let table_addr = Interpreter::resolve_table(state, func.module);
+                    let function_index = {
+                        let table = &store.tables[table_addr.0];
+                        table.data[i]
+                    };
+                    let function_addr = Interpreter::resolve_function(state, func.module, function_index);
+                    // Make sure that the function we've actually retrieved has the same signature as the
+                    // type we want.
+                    assert_eq!(&state.funcs[function_addr.0].functype, func_type);
+                    Interpreter::exec_call(frame, store, state, function_addr);
+                }
                 Drop => {
                     frame.pop();
                 }
@@ -1311,13 +1371,13 @@ impl Interpreter {
                 }
                 GetGlobal(i) => {
                     let i = i as usize;
-                    let vl = Interpreter::get_global(&store.globals, &state, func.module, i);
+                    let vl = Interpreter::get_global(&store.globals, &state, func.module, GlobalIdx(i));
                     frame.push(vl);
                 }
                 SetGlobal(i) => {
                     let i = i as usize;
                     let vl = frame.pop();
-                    Interpreter::set_global(&mut store.globals, &state, func.module, i, vl);
+                    Interpreter::set_global(&mut store.globals, &state, func.module, GlobalIdx(i), vl);
                 }
                 I32Load(offset, _align) => {
                     Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i32);
