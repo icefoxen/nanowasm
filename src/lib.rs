@@ -1353,7 +1353,16 @@ impl Interpreter {
                 Drop => {
                     frame.pop();
                 }
-                Select => (),
+                Select => {
+                    let selector = frame.pop_as::<i32>();
+                    let v2 = frame.pop();
+                    let v1 = frame.pop();
+                    if selector != 0 {
+                        frame.push(v1);
+                    } else {
+                        frame.push(v2);
+                    }
+                },
                 GetLocal(i) => {
                     let i = i as usize;
                     let vl = frame.get_local(i as usize);
