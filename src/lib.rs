@@ -1,5 +1,5 @@
-//! An attempt at creating an embeddable wasm interpreter that's
-//! bloody easier to use and debug than the `parity-wasm` one.
+//! A small embeddable and extendable WebAssembly interpreter.
+//! Uses the `parity-wasm` crate for loading wasm binaries.
 
 extern crate byteorder;
 extern crate num;
@@ -331,19 +331,25 @@ impl_extend_into!(f32, f64);
 //     }
 // }
 
+
 /// Takes a slice of `Local`'s (local variable *specifications*),
 /// and creates a vec of their types.
 fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
+    // This looks like it should just be a map and collect but actually isn't,
+    // 'cause we need to iterate the inner loop.  We could make it a map but it's
+    // trickier and not worth the bother.
     let num_local_slots = locals.iter().map(|x| x.count() as usize).sum();
     let mut v = Vec::with_capacity(num_local_slots);
     for local in locals {
-        for i in 0..local.count() {
+        for _i in 0..local.count() {
             let t = local.value_type();
             v.push(t);
         }
     }
     v
 }
+
+
 
 /// An index into a module's `function` vector.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -370,7 +376,6 @@ pub struct Table {
     /// Maximum size
     max: Option<u32>,
 }
-
 impl Table {
     fn new() -> Self {
         Self {
@@ -475,7 +480,7 @@ pub struct LoadedModule {
 impl LoadedModule {
     /// Instantiates and initializes a new module.
     /// Does NOT validate or run the start function though!
-    fn new(name: &str, module: elements::Module) -> Self {
+    pub fn new(name: &str, module: elements::Module) -> Self {
         assert_eq!(module.version(), 1);
 
         let mut m = Self {
@@ -548,7 +553,7 @@ impl LoadedModule {
                 }
             }
 
-            if let Some(elements) = module.elements_section() {
+            if let Some(_elements) = module.elements_section() {
                 // TODO
                 unimplemented!();
             }
@@ -573,7 +578,7 @@ impl LoadedModule {
                 }
             }
 
-            if let Some(data) = module.data_section() {
+            if let Some(_data) = module.data_section() {
                 // TODO
                 unimplemented!();
             }
@@ -625,7 +630,7 @@ impl LoadedModule {
 
     /// Validates the module: makes sure types are correct,
     /// all the indices into various parts of the module are valid, etc.
-    fn validate(&mut self) {
+    pub fn validate(&mut self) {
         self.validated = true;
     }
 }
@@ -647,27 +652,9 @@ pub struct StackFrame {
 }
 
 impl StackFrame {
-    /// Takes a Func and allocates a stack frame for it, then pushes
+
+    /// Takes a FuncInstance and allocates a stack frame for it, then pushes
     /// the given args to its locals.
-    fn from_func(func: &Func, functype: &FuncType, args: &[Value]) -> Self {
-        // Allocate space for locals+params
-        let mut locals = Vec::with_capacity(func.locals.len() + functype.params.len());
-        assert_eq!(functype.params.len(), args.len(), "Tried to create stack frame for func with different number of parameters than the type says it takes!");
-
-        // Push params
-        locals.extend(args.into_iter());
-        // Fill remaining space with 0's
-        let iter = functype.params.iter().map(|t| Value::default_from_type(*t));
-        locals.extend(iter);
-
-        Self {
-            value_stack: vec![],
-            labels: vec![],
-            locals: locals,
-            ip: 0,
-        }
-    }
-
     fn from_func_instance(func: &FuncInstance, args: &[Value]) -> Self {
         // Allocate space for locals+params
         let mut locals = Vec::with_capacity(func.locals.len() + func.functype.params.len());
@@ -860,7 +847,6 @@ impl FuncInstance {
         start_offset: usize,
         accm: &mut Vec<JumpTarget>,
     ) -> usize {
-        use elements::Opcode::*;
         use std::usize;
         let mut offset = start_offset;
         // TODO: Potentially invalid here, but, okay.
@@ -890,7 +876,6 @@ impl FuncInstance {
             offset += 1;
             assert!(offset < body.len(), "Unclosed block, should never happen!");
         }
-        unreachable!();
     }
 }
 
@@ -1263,19 +1248,22 @@ impl Interpreter {
             match *op {
                 Unreachable => panic!("Unreachable?"),
                 Nop => (),
-                Block(blocktype) => {
+                Block(_blocktype) => {
+                    // TODO: Verify blocktype
                     let jump_target_idx = func.jump_table
                         .binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
                         .expect("Cannot find matching jump table for block statement");
                     let jump_target = &func.jump_table[jump_target_idx];
                     frame.push_label(BlockLabel(jump_target.block_end_instruction));
                 }
-                Loop(blocktype) => {
+                Loop(_blocktype) => {
+                    // TODO: Verify blocktype
                     // Instruction index to jump to on branch or such.
                     let end_idx = frame.ip + 1;
                     frame.push_label(BlockLabel(end_idx));
                 }
-                If(blocktype) => {
+                If(_blocktype) => {
+                    // TODO: Verify blocktype
                     let vl = frame.pop_as::<i32>();
                     let jump_target_idx = func.jump_table
                         .binary_search_by(|jt| jt.block_start_instruction.cmp(&frame.ip))
@@ -1756,18 +1744,15 @@ impl Interpreter {
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::div);
                 }
                 F32Min => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::min);
                 }
                 F32Max => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, f32::max);
                 }
                 F32Copysign => {
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, copysign);
                 },
                 F64Abs => {
-                    use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::abs);
                 }
                 F64Neg => {
@@ -1775,15 +1760,12 @@ impl Interpreter {
                     Interpreter::exec_uniop::<f64, _, _>(frame, Neg::neg);
                 }
                 F64Ceil => {
-                    use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::ceil);
                 }
                 F64Floor => {
-                    use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::floor);
                 }
                 F64Trunc => {
-                    use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::trunc);
                 }
                 F64Nearest => {
@@ -1791,7 +1773,6 @@ impl Interpreter {
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::round);
                 }
                 F64Sqrt => {
-                    use std::ops::*;
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::sqrt);
                 }
                 F64Add => {
@@ -1811,11 +1792,9 @@ impl Interpreter {
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::div);
                 }
                 F64Min => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::min);
                 }
                 F64Max => {
-                    use std::ops::*;
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, f64::max);
                 }
                 F64Copysign => {

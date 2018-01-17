@@ -10,7 +10,7 @@ fn test_validate_failure() {
     let input_file = "test_programs/inc.wasm";
     let module = parity_wasm::deserialize_file(input_file).unwrap();
     let mut mod_instance = LoadedModule::new("inc", module);
-    let interp = Interpreter::new().with_module(mod_instance);
+    let _interp = Interpreter::new().with_module(mod_instance);
 }
 
 #[test]
