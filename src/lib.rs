@@ -6,6 +6,7 @@ extern crate num;
 extern crate parity_wasm;
 
 use byteorder::ByteOrder;
+use num::ToPrimitive;
 use parity_wasm::elements;
 
 use std::collections::HashMap;
@@ -237,7 +238,8 @@ impl_wrap_into!(u64, f32);
 /// Else return z1 with negated sign.
 fn copysign<T>(f1: T, f2: T) -> T
     where T: num::Float {
-    // TODO: Probably doesn't work properly with NaN's?
+    // This probably even works as intended for NaN's, since
+    // is_sign_positive() and such just look at the sign bit.
     if f1.is_sign_positive() && f2.is_sign_positive()
         || f1.is_sign_negative() && f2.is_sign_negative() {
             f1
@@ -264,6 +266,29 @@ fn round_to_int<From, To>(f1: From) -> To
     // Also not sure NumCast is the right thing to use here but it seems to work.
     To::from(f1.round()).unwrap()
 }
+
+/// A convenience function for doing a bitwise conversion of a u32 to an f32.
+/// We don't just use `f32::from_bits()` so that we can insert extra checking
+/// to filter out signaling NaN's, which are disallowed by wasm.
+fn u32_to_f32(i: u32) -> f32 {
+    // TODO: Insert extra checking to filter out signaling NaN's, which are
+    // disallowed by wasm.  :-P
+    // BUGGO: from_bits is technically incorrect because a signaling NaN
+    // *may* slip through from_bits(), and WebAssembly currently
+    // does not support signaling NaN's.
+    // See https://webassembly.github.io/spec/core/exec/numerics.html#floating-point-operations
+    f32::from_bits(i)
+}
+
+/// A convenience function for doing a bitwise conversion of a u64 to an f64
+/// We don't just use `f64::from_bits()` so that we can insert extra checking
+/// to filter out signaling NaN's, which are disallowed by wasm.
+fn u64_to_f64(i: u64) -> f64 {
+    // TODO: Insert extra checking to filter out signaling NaN's, which are
+    // disallowed by wasm.  :-P
+    f64::from_bits(i)
+}
+
 
 
 /// Convert one type to another by extending with leading zeroes
@@ -302,35 +327,6 @@ impl_extend_into!(u32, f64);
 impl_extend_into!(i64, f64);
 impl_extend_into!(u64, f64);
 impl_extend_into!(f32, f64);
-
-// /// Memory for a variable.
-// #[derive(Debug, Copy, Clone, PartialEq)]
-// pub struct VariableSlot {
-//     variable_type: elements::ValueType,
-//     value: Value,
-// }
-
-// impl VariableSlot {
-//     /// Takes a slice of `Local`'s (local variable *specifications*),
-//     /// and creates a vec of `VariableSlot`'s matching them.
-//     fn from_locals(locals: &[elements::Local]) -> Vec<VariableSlot> {
-//         let num_local_slots = locals.iter()
-//             .map(|x| x.count() as usize)
-//             .sum();
-//         let mut v = Vec::with_capacity(num_local_slots);
-//         for local in locals {
-//             for i in 0..local.count() {
-//                 let slot = VariableSlot {
-//                     variable_type: local.value_type(),
-//                     value: Value::default_from_type(local.value_type()),
-//                 };
-//                 v.push(slot);
-//             }
-//         }
-//         v
-//     }
-// }
-
 
 /// Takes a slice of `Local`'s (local variable *specifications*),
 /// and creates a vec of their types.
@@ -413,17 +409,17 @@ impl Memory {
             max: None,
         };
         if let Some(size) = size {
-            // TODO: Should always be true; use one of num's try_convert
-            // methods or such instead.
-            assert!(size < std::i32::MAX as u32);
-            mem.resize(size as i32);
+            let size_i = size.to_i32()
+                .expect("Should never happen; 32-bit wasm should always have memory sizes << i32::MAX");
+            mem.resize(size_i);
         }
         mem
     }
 
     /// The length of the allocated storage, in pages.
     fn len(&self) -> u32 {
-        (self.data.len() / Self::PAGE_SIZE) as u32
+        (self.data.len() / Self::PAGE_SIZE).to_u32()
+            .expect("Page count of memory > u32::MAX; should never happen!")
     }
 
     /// Resizes the memory by the given delta, in units of `Memory::PAGE_SIZE`.
@@ -435,6 +431,8 @@ impl Memory {
             .expect("Asked for more memory than can fit in an i32?");
         // This assert should always be true if we only ever allocate mem with
         // this function, buuuuuut...
+        // TODO: This check can probably be better, and see if we can get rid some of
+        // the bloody `as` conversions too.
         assert!(self.data.len() < std::i32::MAX as usize);
         let new_size = self.data.len() as i32 + delta_bytes;
         self.data.resize(new_size as usize, 0);
@@ -810,7 +808,7 @@ pub struct FuncInstance {
 
 impl FuncInstance {
     /// Iterate through a function's body and construct the jump table for it.
-    /// If we find a block instruction, the target is the matching end instruction.
+    /// If we find a block or if instruction, the target is the matching end instruction.
     ///
     /// Panics on invalid (improperly nested) blocks.
     fn compute_jump_table(body: &[elements::Opcode]) -> Vec<JumpTarget> {
@@ -1120,6 +1118,7 @@ impl Interpreter {
         where F: Fn(&[u8]) -> N,
               N: Into<Value> {
         let address = frame.pop_as::<i32>();
+        // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         let mem_contents = Interpreter::get_memory_with(
             &mut store.mems, &state, module, 
@@ -1138,6 +1137,7 @@ impl Interpreter {
               SourceN: Extend<DestN>,
               DestN: Into<Value> {
         let address = frame.pop_as::<i32>();
+        // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         let mem_contents = Interpreter::get_memory_with(
             &mut store.mems, &state, module, 
@@ -1154,6 +1154,7 @@ impl Interpreter {
               N: From<Value> {
         let vl = frame.pop_as::<N>();
         let address = frame.pop_as::<i32>();
+        // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
             &mut store.mems, &state, module, 
@@ -1168,6 +1169,7 @@ impl Interpreter {
               SourceN: From<Value> + Wrap<DestN> {
         let vl: DestN = frame.pop_as::<SourceN>().wrap();
         let address = frame.pop_as::<i32>();
+        // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
             &mut store.mems, &state, module, 
@@ -1471,20 +1473,11 @@ impl Interpreter {
                 }
                 // Why oh why are these floats represented as u32 and u64?
                 // Because this is the serialized representation, sigh.
-                // TODO: Fix this somehow so we don't have to keep encoding/
-                // decoding floats but just check them once?
-                // Even though from_bits() should be basically free...
-                // BUGGO: This is technically incorrect because a signaling NaN
-                // *may* slip through from_bits(), and WebAssembly currently
-                // does not support signaling NaN's.
-                // See https://webassembly.github.io/spec/core/exec/numerics.html#floating-point-operations
                 F32Const(i) => {
-                    use std::f32;
-                    Interpreter::exec_const(frame, Value::from(f32::from_bits(i)));
+                    Interpreter::exec_const(frame, Value::from(u32_to_f32(i)));
                 }
                 F64Const(l) => {
-                    use std::f64;
-                    Interpreter::exec_const(frame, Value::from(f64::from_bits(l)));
+                    Interpreter::exec_const(frame, Value::from(u64_to_f64(l)));
                 }
                 I32Eqz => {
                     Interpreter::exec_uniop::<i32, bool, _>(frame, |x| i32::eq(&x, &0));
@@ -1889,8 +1882,9 @@ impl Interpreter {
             frame.ip += 1;
         }
         // Return the function's return value (if any).
-        // TODO: We should check that the value matches the function's stated
-        // type and arity.
+        let return_type = frame.value_stack.last()
+            .map(|vl| vl.get_type());
+        assert_eq!(return_type, func.functype.return_type);
         frame.value_stack.last().cloned()
     }
 
