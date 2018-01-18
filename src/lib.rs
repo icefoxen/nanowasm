@@ -762,6 +762,18 @@ impl StackFrame {
     }
 }
 
+
+macro_rules! impl_address_new {
+	($t: ident) => {
+		impl $t {
+			pub fn new(i: usize) -> Self {
+				$t(i)
+			}
+		}
+	}
+}
+
+
 /// Function address type; refers to a particular `FuncInstance` in the Store.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FunctionAddress(usize);
@@ -777,6 +789,8 @@ pub struct GlobalAddress(usize);
 /// Module instance address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ModuleAddress(usize);
+
+impl_address_new!(FunctionAddress);
 
 
 /// For forward jumps (if, block) we need to know where to jump TO.
