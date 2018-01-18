@@ -553,6 +553,7 @@ impl LoadedModule {
 
             if let Some(_elements) = module.elements_section() {
                 // TODO
+                println!("Elements");
                 unimplemented!();
             }
         }
@@ -578,6 +579,7 @@ impl LoadedModule {
 
             if let Some(_data) = module.data_section() {
                 // TODO
+                println!("data");
                 unimplemented!();
             }
         }
