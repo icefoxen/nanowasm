@@ -28,8 +28,6 @@ impl<'a> From<&'a elements::Type> for FuncType {
     }
 }
 
-
-
 /// An index into a module's `type` vector.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeIdx(pub usize);
@@ -41,7 +39,6 @@ pub struct FuncIdx(pub usize);
 /// An index into a module's `globals` vector.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GlobalIdx(pub usize);
-
 
 /// An actual value used at runtime.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
@@ -231,12 +228,11 @@ impl_wrap_into!(i64, i32);
 impl_wrap_into!(i64, f32);
 impl_wrap_into!(u64, f32);
 
-
 /// Convert one type to another by extending with leading zeroes
 /// or one's (depending on destination type)
 pub trait Extend<T> {
-	/// Convert one type to another by extending with leading zeroes.
-	fn extend(self) -> T;
+    /// Convert one type to another by extending with leading zeroes.
+    fn extend(self) -> T;
 }
 
 /// Implements the `Extend` trait for a given numeric type.
@@ -270,7 +266,6 @@ impl_extend_into!(u32, f64);
 impl_extend_into!(i64, f64);
 impl_extend_into!(u64, f64);
 impl_extend_into!(f32, f64);
-
 
 /// A function ready to be executed.
 #[derive(Debug, Clone)]
@@ -331,8 +326,9 @@ impl Memory {
             max: None,
         };
         if let Some(size) = size {
-            let size_i = size.to_i32()
-                .expect("Should never happen; 32-bit wasm should always have memory sizes << i32::MAX");
+            let size_i = size.to_i32().expect(
+                "Should never happen; 32-bit wasm should always have memory sizes << i32::MAX",
+            );
             mem.resize(size_i);
         }
         mem
@@ -340,7 +336,8 @@ impl Memory {
 
     /// The length of the allocated storage, in pages.
     pub fn len(&self) -> u32 {
-        (self.data.len() / Self::PAGE_SIZE).to_u32()
+        (self.data.len() / Self::PAGE_SIZE)
+            .to_u32()
             .expect("Page count of memory > u32::MAX; should never happen!")
     }
 

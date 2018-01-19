@@ -1,6 +1,6 @@
 extern crate clap;
-extern crate parity_wasm;
 extern crate nanowasm;
+extern crate parity_wasm;
 
 use std::env;
 
@@ -11,7 +11,7 @@ use nanowasm::interpreter::*;
 
 fn main() {
     println!("Args are: {:?}", env::args());
-    
+
     // Parse inputs
     let matches = App::new("nanowasm")
         .version("0.1")

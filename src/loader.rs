@@ -21,7 +21,6 @@ fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
     v
 }
 
-
 /// A loaded wasm module
 #[derive(Debug, Clone)]
 pub struct LoadedModule {
@@ -208,4 +207,3 @@ impl LoadedModule {
         self.validated = true;
     }
 }
-

@@ -7,21 +7,26 @@ use num;
 /// If z1 and z2 have the same sign, then return z1
 /// Else return z1 with negated sign.
 pub fn copysign<T>(f1: T, f2: T) -> T
-    where T: num::Float {
+where
+    T: num::Float,
+{
     // This probably even works as intended for NaN's, since
     // is_sign_positive() and such just look at the sign bit.
     if f1.is_sign_positive() && f2.is_sign_positive()
-        || f1.is_sign_negative() && f2.is_sign_negative() {
-            f1
-        } else {
-            f1.neg()
-        }
+        || f1.is_sign_negative() && f2.is_sign_negative()
+    {
+        f1
+    } else {
+        f1.neg()
+    }
 }
 
 /// Truncates the float into the given integer type.
 pub fn truncate_to_int<From, To>(f1: From) -> To
-    where From: num::Float,
-          To: num::NumCast {
+where
+    From: num::Float,
+    To: num::NumCast,
+{
     // TODO: Needs more correctness checking!  Inf, NaN, etc.
     // Also not sure NumCast is the right thing to use here but it seems to work.
     To::from(f1.trunc()).unwrap()
@@ -29,8 +34,10 @@ pub fn truncate_to_int<From, To>(f1: From) -> To
 
 /// Rounds the float into the given integer type.
 pub fn round_to_int<From, To>(f1: From) -> To
-    where From: num::Float,
-          To: num::NumCast {
+where
+    From: num::Float,
+    To: num::NumCast,
+{
     // TODO: Needs more correctness checking!  Inf, NaN, etc.
     // Also needs to verify that the rounding behavior is correct.
     // Also not sure NumCast is the right thing to use here but it seems to work.

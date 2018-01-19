@@ -5,7 +5,6 @@ extern crate byteorder;
 extern crate num;
 extern crate parity_wasm;
 
-
 #[cfg(test)]
 mod tests;
 
@@ -13,4 +12,3 @@ pub mod types;
 pub mod util;
 pub mod loader;
 pub mod interpreter;
-

@@ -137,7 +137,6 @@ impl StackFrame {
     }
 }
 
-
 macro_rules! impl_address_new {
     ($t: ident) => {
 	impl $t {
@@ -147,7 +146,6 @@ macro_rules! impl_address_new {
 	}
     }
 }
-
 
 /// Function address type; refers to a particular `FuncInstance` in the Store.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -166,7 +164,6 @@ pub struct GlobalAddress(pub usize);
 pub struct ModuleAddress(pub usize);
 
 impl_address_new!(FunctionAddress);
-
 
 /// For forward jumps (if, block) we need to know where to jump TO.
 /// Serialized wasm doesn't store this information explicitly,
@@ -360,7 +357,7 @@ impl Interpreter {
         // while still making it always visible, but this is fine for now.
         #[cfg(target_endian = "big")]
         println!("WARNING: Running on big-endian target architecture!  Results are *not* guarenteed to be correct!");
-        
+
         Self {
             store: Store::default(),
             state: State::default(),
@@ -376,7 +373,11 @@ impl Interpreter {
     }
 
     /// Returns a FunctionAddress from a given index
-    fn resolve_function(state: &State, module_addr: ModuleAddress, idx: FuncIdx) -> FunctionAddress {
+    fn resolve_function(
+        state: &State,
+        module_addr: ModuleAddress,
+        idx: FuncIdx,
+    ) -> FunctionAddress {
         assert!(module_addr.0 < state.module_instances.len());
         let module_instance = &state.module_instances[module_addr.0];
         assert!(idx.0 < module_instance.functions.len());
@@ -394,7 +395,6 @@ impl Interpreter {
         assert!(idx.0 < module_instance.types.len());
         &module_instance.types[idx.0]
     }
-
 
     /// Returns a MemoryAddress for the Memory of a given ModuleInstance.
     /// Modules can currently only have one Memory, so it's pretty easy.
@@ -414,7 +414,6 @@ impl Interpreter {
         module_instance.table.unwrap()
     }
 
-    
     /// Get a global variable by *index*.  Needs a module instance
     /// address to look up the global variable's address.
     /// Panics if out of bounds.
@@ -448,7 +447,16 @@ impl Interpreter {
     }
 
     /// Assigns a value to the given `memory` with the given function.
-    fn set_memory_with<F, N>(mems: &mut [Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F, vl: N) where F: Fn(&mut [u8], N) {
+    fn set_memory_with<F, N>(
+        mems: &mut [Memory],
+        state: &State,
+        module_addr: ModuleAddress,
+        offset: usize,
+        f: F,
+        vl: N,
+    ) where
+        F: Fn(&mut [u8], N),
+    {
         let memory_address = Interpreter::resolve_memory(state, module_addr);
         let mem = &mut mems[memory_address.0];
         assert!(offset + std::mem::size_of::<N>() < mem.data.len());
@@ -456,7 +464,16 @@ impl Interpreter {
     }
 
     /// Reads data from a slice of the given `memory` with the given function
-    fn get_memory_with<F, N>(mems: &[Memory], state: &State, module_addr: ModuleAddress, offset: usize, f: F) -> N where F: Fn(&[u8]) -> N {
+    fn get_memory_with<F, N>(
+        mems: &[Memory],
+        state: &State,
+        module_addr: ModuleAddress,
+        offset: usize,
+        f: F,
+    ) -> N
+    where
+        F: Fn(&[u8]) -> N,
+    {
         let memory_address = Interpreter::resolve_memory(state, module_addr);
         let mem = &mems[memory_address.0];
         assert!(offset + std::mem::size_of::<N>() < mem.data.len());
@@ -516,79 +533,125 @@ impl Interpreter {
         frame.push(vl);
     }
 
-    /// Executes a load instruction, using the given function to 
+    /// Executes a load instruction, using the given function to
     /// convert the memory's `&[u8]` into the given Value type.
-    fn exec_load<F, N>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
-        where F: Fn(&[u8]) -> N,
-              N: Into<Value> {
+    fn exec_load<F, N>(
+        frame: &mut StackFrame,
+        store: &mut Store,
+        state: &State,
+        module: ModuleAddress,
+        offset: u32,
+        func: F,
+    ) where
+        F: Fn(&[u8]) -> N,
+        N: Into<Value>,
+    {
         let address = frame.pop_as::<i32>();
         // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         let mem_contents = Interpreter::get_memory_with(
-            &mut store.mems, &state, module, 
-            effective_address as usize, 
-            func).into();
+            &mut store.mems,
+            &state,
+            module,
+            effective_address as usize,
+            func,
+        ).into();
         frame.push(mem_contents);
     }
 
-
-    /// Executes a load instruction, using the given function to 
+    /// Executes a load instruction, using the given function to
     /// convert the memory's `&[u8]` into the the SourceN type,
     /// then sign-extending it (based on whether it's signed or unsigned)
     /// into DestN.
-    fn exec_load_extend<F, SourceN, DestN>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
-        where F: Fn(&[u8]) -> SourceN,
-              SourceN: Extend<DestN>,
-              DestN: Into<Value> {
+    fn exec_load_extend<F, SourceN, DestN>(
+        frame: &mut StackFrame,
+        store: &mut Store,
+        state: &State,
+        module: ModuleAddress,
+        offset: u32,
+        func: F,
+    ) where
+        F: Fn(&[u8]) -> SourceN,
+        SourceN: Extend<DestN>,
+        DestN: Into<Value>,
+    {
         let address = frame.pop_as::<i32>();
         // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         let mem_contents = Interpreter::get_memory_with(
-            &mut store.mems, &state, module, 
-            effective_address as usize, 
-            func).extend().into();
+            &mut store.mems,
+            &state,
+            module,
+            effective_address as usize,
+            func,
+        ).extend()
+            .into();
         frame.push(mem_contents);
     }
 
-
-    /// Executes a store instruction, using the given function to 
+    /// Executes a store instruction, using the given function to
     /// write the Value type into the memory's `&mut [u8]`
-    fn exec_store<F, N>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
-        where F: Fn(&mut [u8], N),
-              N: From<Value> {
+    fn exec_store<F, N>(
+        frame: &mut StackFrame,
+        store: &mut Store,
+        state: &State,
+        module: ModuleAddress,
+        offset: u32,
+        func: F,
+    ) where
+        F: Fn(&mut [u8], N),
+        N: From<Value>,
+    {
         let vl = frame.pop_as::<N>();
         let address = frame.pop_as::<i32>();
         // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
-            &mut store.mems, &state, module, 
-            effective_address as usize, 
-            func, vl);
+            &mut store.mems,
+            &state,
+            module,
+            effective_address as usize,
+            func,
+            vl,
+        );
     }
 
     /// Wraps/truncates the the Value on the stack from the given SourceN type
     /// to the DestN type, then stores it in memory.
-    fn exec_store_wrap<F, SourceN, DestN>(frame: &mut StackFrame, store: &mut Store, state: &State, module: ModuleAddress, offset: u32, func: F)
-        where F: Fn(&mut [u8], DestN),
-              SourceN: From<Value> + Wrap<DestN> {
+    fn exec_store_wrap<F, SourceN, DestN>(
+        frame: &mut StackFrame,
+        store: &mut Store,
+        state: &State,
+        module: ModuleAddress,
+        offset: u32,
+        func: F,
+    ) where
+        F: Fn(&mut [u8], DestN),
+        SourceN: From<Value> + Wrap<DestN>,
+    {
         let vl: DestN = frame.pop_as::<SourceN>().wrap();
         let address = frame.pop_as::<i32>();
         // BUGGO: Make sure wrap-arounds don't happen here!
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
-            &mut store.mems, &state, module, 
-            effective_address as usize, 
-            func, vl);
+            &mut store.mems,
+            &state,
+            module,
+            effective_address as usize,
+            func,
+            vl,
+        );
     }
 
     /// Helper function for running binary operations that pop
     /// two values from the stack and push one result
     fn exec_binop<T1, T2, Res, F>(frame: &mut StackFrame, op: F)
-        where T1: From<Value>,
-              T2: From<Value>,
-              Res: Into<Value>,
-              F: Fn(T1, T2) -> Res
-     {
+    where
+        T1: From<Value>,
+        T2: From<Value>,
+        Res: Into<Value>,
+        F: Fn(T1, T2) -> Res,
+    {
         let (a, b) = frame.pop2_as::<T1, T2>();
         frame.push(op(a, b).into());
     }
@@ -596,16 +659,22 @@ impl Interpreter {
     /// Helper function for running binary operations that pop
     /// two values from the stack and push one result
     fn exec_uniop<T, Res, F>(frame: &mut StackFrame, op: F)
-        where T: From<Value>,
-              Res: Into<Value>,
-              F: Fn(T) -> Res
+    where
+        T: From<Value>,
+        Res: Into<Value>,
+        F: Fn(T) -> Res,
     {
         let a = frame.pop_as::<T>();
         frame.push(op(a).into());
     }
 
     /// Helper function for running a function call.
-    fn exec_call(frame: &mut StackFrame, store: &mut Store, state: &State, function_addr: FunctionAddress) {
+    fn exec_call(
+        frame: &mut StackFrame,
+        store: &mut Store,
+        state: &State,
+        function_addr: FunctionAddress,
+    ) {
         // Typecheck and get appropriate arguments off the stack to pass
         // to the called function.
         let f = &state.funcs[function_addr.0];
@@ -620,7 +689,7 @@ impl Interpreter {
             // Some(Value::I32(3))
             Interpreter::exec(store, state, function_addr, params_slice)
         };
-        
+
         // Great, now check that the return value matches the stated
         // return type, and push it to the values stack.
         let return_type = return_val.map(|v| v.get_type());
@@ -718,10 +787,11 @@ impl Interpreter {
                 }
                 Return => {
                     break;
-                },
+                }
                 Call(i) => {
                     let i = i as usize;
-                    let function_addr = Interpreter::resolve_function(state, func.module, FuncIdx(i));
+                    let function_addr =
+                        Interpreter::resolve_function(state, func.module, FuncIdx(i));
                     Interpreter::exec_call(frame, store, state, function_addr);
                 }
                 CallIndirect(x, _) => {
@@ -738,7 +808,8 @@ impl Interpreter {
                         let table = &store.tables[table_addr.0];
                         table.data[i]
                     };
-                    let function_addr = Interpreter::resolve_function(state, func.module, function_index);
+                    let function_addr =
+                        Interpreter::resolve_function(state, func.module, function_index);
                     // Make sure that the function we've actually retrieved has the same signature as the
                     // type we want.
                     assert_eq!(&state.funcs[function_addr.0].functype, func_type);
@@ -756,7 +827,7 @@ impl Interpreter {
                     } else {
                         frame.push(v2);
                     }
-                },
+                }
                 GetLocal(i) => {
                     let i = i as usize;
                     let vl = frame.get_local(i as usize);
@@ -774,91 +845,259 @@ impl Interpreter {
                 }
                 GetGlobal(i) => {
                     let i = i as usize;
-                    let vl = Interpreter::get_global(&store.globals, &state, func.module, GlobalIdx(i));
+                    let vl =
+                        Interpreter::get_global(&store.globals, &state, func.module, GlobalIdx(i));
                     frame.push(vl);
                 }
                 SetGlobal(i) => {
                     let i = i as usize;
                     let vl = frame.pop();
-                    Interpreter::set_global(&mut store.globals, &state, func.module, GlobalIdx(i), vl);
+                    Interpreter::set_global(
+                        &mut store.globals,
+                        &state,
+                        func.module,
+                        GlobalIdx(i),
+                        vl,
+                    );
                 }
                 I32Load(offset, _align) => {
-                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i32);
-                },
+                    Interpreter::exec_load(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_i32,
+                    );
+                }
                 I64Load(offset, _align) => {
-                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i64);
-                },
+                    Interpreter::exec_load(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_i64,
+                    );
+                }
                 F32Load(offset, _align) => {
-                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_f32);
-                },
+                    Interpreter::exec_load(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_f32,
+                    );
+                }
                 F64Load(offset, _align) => {
-                    Interpreter::exec_load(frame, store, state, func.module, offset, byteorder::LittleEndian::read_f64);
-                },
+                    Interpreter::exec_load(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_f64,
+                    );
+                }
                 I32Load8S(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, i8, i32>(frame, store, state, func.module, offset, |mem| mem[0] as i8);
-                },
+                    Interpreter::exec_load_extend::<_, i8, i32>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem| mem[0] as i8,
+                    );
+                }
                 I32Load8U(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, u8, i32>(frame, store, state, func.module, offset, |mem| mem[0] as u8);
-                },
+                    Interpreter::exec_load_extend::<_, u8, i32>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem| mem[0] as u8,
+                    );
+                }
                 I32Load16S(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, i16, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i16);
-                },
+                    Interpreter::exec_load_extend::<_, i16, i32>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_i16,
+                    );
+                }
                 I32Load16U(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, u16, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u16);
-                },
+                    Interpreter::exec_load_extend::<_, u16, i32>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_u16,
+                    );
+                }
                 I64Load8S(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, i8, i64>(frame, store, state, func.module, offset, |mem| mem[0] as i8);
-                },
+                    Interpreter::exec_load_extend::<_, i8, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem| mem[0] as i8,
+                    );
+                }
                 I64Load8U(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, u8, i64>(frame, store, state, func.module, offset, |mem| mem[0] as u8);
-                },
+                    Interpreter::exec_load_extend::<_, u8, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem| mem[0] as u8,
+                    );
+                }
                 I64Load16S(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, i16, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i16);
-                },
+                    Interpreter::exec_load_extend::<_, i16, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_i16,
+                    );
+                }
                 I64Load16U(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, u16, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u16);
-                },
+                    Interpreter::exec_load_extend::<_, u16, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_u16,
+                    );
+                }
                 I64Load32S(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, i32, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_i32);
-                },
+                    Interpreter::exec_load_extend::<_, i32, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_i32,
+                    );
+                }
                 I64Load32U(offset, _align) => {
-                    Interpreter::exec_load_extend::<_, u32, i64>(frame, store, state, func.module, offset, byteorder::LittleEndian::read_u32);
-                },
+                    Interpreter::exec_load_extend::<_, u32, i64>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::read_u32,
+                    );
+                }
                 I32Store(offset, _align) => {
-                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
-                },
+                    Interpreter::exec_store(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_i32,
+                    );
+                }
                 I64Store(offset, _align) => {
-                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i64);
-                },
+                    Interpreter::exec_store(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_i64,
+                    );
+                }
                 F32Store(offset, _align) => {
-                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_f32);
-                },
+                    Interpreter::exec_store(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_f32,
+                    );
+                }
                 F64Store(offset, _align) => {
-                    Interpreter::exec_store(frame, store, state, func.module, offset, byteorder::LittleEndian::write_f64);
-                },
+                    Interpreter::exec_store(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_f64,
+                    );
+                }
                 I32Store8(offset, _align) => {
                     // `byteorder` doesn't have write_i8 since it's a bit redundant,
                     // so we make our own.
-                    Interpreter::exec_store_wrap::<_, i32, i8>(frame, store, state, func.module, offset, |mem, x| mem[0] = x as u8);
-                },
+                    Interpreter::exec_store_wrap::<_, i32, i8>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem, x| mem[0] = x as u8,
+                    );
+                }
                 I32Store16(offset, _align) => {
-                    Interpreter::exec_store_wrap::<_, i32, i16>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i16);
-                },
+                    Interpreter::exec_store_wrap::<_, i32, i16>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_i16,
+                    );
+                }
                 I64Store8(offset, _align) => {
-                    Interpreter::exec_store_wrap::<_, i64, i8>(frame, store, state, func.module, offset, |mem, x| mem[0] = x as u8);
-                },
+                    Interpreter::exec_store_wrap::<_, i64, i8>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        |mem, x| mem[0] = x as u8,
+                    );
+                }
                 I64Store16(offset, _align) => {
-                    Interpreter::exec_store_wrap::<_, i64, i16>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i16);
-                },
+                    Interpreter::exec_store_wrap::<_, i64, i16>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_i16,
+                    );
+                }
                 I64Store32(offset, _align) => {
-                    Interpreter::exec_store_wrap::<_, i64, i32>(frame, store, state, func.module, offset, byteorder::LittleEndian::write_i32);
-                },
+                    Interpreter::exec_store_wrap::<_, i64, i32>(
+                        frame,
+                        store,
+                        state,
+                        func.module,
+                        offset,
+                        byteorder::LittleEndian::write_i32,
+                    );
+                }
                 CurrentMemory(_) => {
                     let module_addr = func.module;
                     let memory_addr = Interpreter::resolve_memory(state, module_addr);
                     let mem = &store.mems[memory_addr.0];
                     frame.push(mem.len().into())
-                },
+                }
                 GrowMemory(_) => {
                     let size_delta = frame.pop_as::<i32>();
                     let module_addr = func.module;
@@ -869,12 +1108,8 @@ impl Interpreter {
                     mem.resize(size_delta);
                     frame.push(prev_size.into());
                 }
-                I32Const(i) => {
-                    Interpreter::exec_const(frame, i.into())
-                }
-                I64Const(l) => {
-                    Interpreter::exec_const(frame, l.into())
-                }
+                I32Const(i) => Interpreter::exec_const(frame, i.into()),
+                I64Const(l) => Interpreter::exec_const(frame, l.into()),
                 // Why oh why are these floats represented as u32 and u64?
                 // Because this is the serialized representation, sigh.
                 F32Const(i) => {
@@ -1091,10 +1326,10 @@ impl Interpreter {
                 }
                 I64ShrS => {
                     Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::wrapping_shr);
-                },
+                }
                 I64ShrU => {
                     Interpreter::exec_binop::<u64, u32, _, _>(frame, u64::wrapping_shr);
-                },
+                }
                 I64Rotl => {
                     Interpreter::exec_binop::<i64, u32, _, _>(frame, i64::rotate_left);
                 }
@@ -1148,7 +1383,7 @@ impl Interpreter {
                 }
                 F32Copysign => {
                     Interpreter::exec_binop::<f32, f32, _, _>(frame, copysign);
-                },
+                }
                 F64Abs => {
                     Interpreter::exec_uniop::<f64, _, _>(frame, f64::abs);
                 }
@@ -1196,10 +1431,10 @@ impl Interpreter {
                 }
                 F64Copysign => {
                     Interpreter::exec_binop::<f64, f64, _, _>(frame, copysign);
-                },
+                }
                 I32WrapI64 => {
                     Interpreter::exec_uniop::<i64, i32, _>(frame, Wrap::wrap);
-                },
+                }
                 I32TruncSF32 => {
                     Interpreter::exec_uniop::<f32, i32, _>(frame, truncate_to_int);
                 }
@@ -1246,7 +1481,7 @@ impl Interpreter {
                 }
                 F32DemoteF64 => {
                     Interpreter::exec_uniop::<f64, _, _>(frame, |f| f as f32);
-                },
+                }
                 F64ConvertSI32 => {
                     Interpreter::exec_uniop::<f64, i32, _>(frame, round_to_int);
                 }
@@ -1261,7 +1496,7 @@ impl Interpreter {
                 }
                 F64PromoteF32 => {
                     Interpreter::exec_uniop::<f32, _, _>(frame, f64::from);
-                },
+                }
                 I32ReinterpretF32 => {
                     // TODO: Check that this is going the correct direction,
                     // i32 -> f32
@@ -1271,7 +1506,7 @@ impl Interpreter {
                     // TODO: Check that this is going the correct direction,
                     // i64 -> f64
                     Interpreter::exec_uniop(frame, f64::from_bits);
-                },
+                }
                 F32ReinterpretI32 => {
                     // TODO: Check that this is going the correct direction,
                     // f32 -> i32
@@ -1286,8 +1521,7 @@ impl Interpreter {
             frame.ip += 1;
         }
         // Return the function's return value (if any).
-        let return_type = frame.value_stack.last()
-            .map(|vl| vl.get_type());
+        let return_type = frame.value_stack.last().map(|vl| vl.get_type());
         assert_eq!(return_type, func.functype.return_type);
         frame.value_stack.last().cloned()
     }

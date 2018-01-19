@@ -66,16 +66,15 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
     let module = builder::ModuleBuilder::new()
         .function()
         .main()
-            .signature()
-                .with_params(input_types)
-                .with_return_type(output_type)
-                .build()
-            .body()
-                .with_opcodes(elements::Opcodes::new(init_ops))
-                .build()
-            .build()
+        .signature()
+        .with_params(input_types)
+        .with_return_type(output_type)
         .build()
-        ;
+        .body()
+        .with_opcodes(elements::Opcodes::new(init_ops))
+        .build()
+        .build()
+        .build();
     let mut loaded = LoadedModule::new("test", module);
     loaded.validate();
     let mut interp = Interpreter::new().with_module(loaded);
@@ -86,31 +85,35 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
 #[test]
 fn test_i32_add() {
     test_stack_program(
-        &vec![Opcode::I32Add], 
-        &vec![Value::I32(1), Value::I32(2)], 
-        Some(Value::I32(3)));
+        &vec![Opcode::I32Add],
+        &vec![Value::I32(1), Value::I32(2)],
+        Some(Value::I32(3)),
+    );
 }
 
 #[test]
 fn test_i64_add() {
     test_stack_program(
-        &vec![Opcode::I64Add], 
-        &vec![Value::I64(-1), Value::I64(99)], 
-        Some(Value::I64(98)));
+        &vec![Opcode::I64Add],
+        &vec![Value::I64(-1), Value::I64(99)],
+        Some(Value::I64(98)),
+    );
 }
 
 #[test]
 fn test_i32_sub() {
     test_stack_program(
-        &vec![Opcode::I32Sub], 
-        &vec![Value::I32(1), Value::I32(2)], 
-        Some(Value::I32(-1)));
+        &vec![Opcode::I32Sub],
+        &vec![Value::I32(1), Value::I32(2)],
+        Some(Value::I32(-1)),
+    );
 }
 
 #[test]
 fn test_i64_sub() {
     test_stack_program(
-        &vec![Opcode::I64Sub], 
-        &vec![Value::I64(-1), Value::I64(99)], 
-        Some(Value::I64(-100)));
+        &vec![Opcode::I64Sub],
+        &vec![Value::I64(-1), Value::I64(99)],
+        Some(Value::I64(-100)),
+    );
 }
