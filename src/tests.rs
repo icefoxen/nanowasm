@@ -1,7 +1,9 @@
 use parity_wasm;
 use parity_wasm::builder;
 use parity_wasm::elements::{self, Opcode};
-use super::*;
+use types::*;
+use loader::*;
+use interpreter::*;
 
 /// Make sure that adding a non-validated module to a program fails.
 #[test]
