@@ -1,7 +1,10 @@
 //! A start on a parser/runner for the wast test format.  :|
 //!
 //! What we're going to have to do is parse it, pull out the actual code,
-//! assemble it (if necessary), 
+//! assemble it (if necessary),
+//!
+//! The test script syntax is described here: https://github.com/WebAssembly/spec/blob/master/interpreter/README.md#scripts
+//! though maybe not entirely correctly.
 
 extern crate clap;
 #[macro_use]
@@ -17,6 +20,7 @@ use clap::{App, Arg};
 enum Ast {
     Symbol(String),
     Number(String),
+    String(String),
     List(Vec<Ast>)
 }
 
@@ -29,11 +33,19 @@ named!(parens(&str) -> Ast,
            Ast::List
        ));
 
+
+// TODO: Does not yet parse strings with escaped quotes or other characters!  Aieeee.
+// Turns out I couldn't figure out how to do this in Rivet either.
+named!(string(&str) -> Ast,
+       map!(
+           delimited!(tag!("\""), is_not_s!("\""), tag!("\"")),
+           |x| Ast::String(x.to_owned())));
+
 named!(number(&str) -> Ast, map!(ws!(nom::digit), |x| Ast::Number(x.to_owned())));
 
 named!(symbol(&str) -> Ast, map!(ws!(nom::alphanumeric), |x| Ast::Symbol(x.to_owned())));
 
-named!(expr(&str) -> Vec<Ast>, many0!(alt!(number | symbol | parens)));
+named!(expr(&str) -> Vec<Ast>, many0!(alt!(number | symbol | string | parens)));
 
 fn main() {
     println!("Args are: {:?}", env::args());
@@ -64,7 +76,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let s = "()";
-        let res = parens("(foo bar bop (rawr hi there))");
+        let res = parens("(foo bar bop (rawr hi there \"joe\" 10))");
         println!("{:?}", res);
         assert!(false);
     }
