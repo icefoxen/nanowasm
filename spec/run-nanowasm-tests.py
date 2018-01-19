@@ -21,8 +21,11 @@ def main():
     # run wabt interpreter tests
     # TODO Lots of the tests are not reeeeeaally valid for nanowasm,
     # so we should list a subset of them.
-    wabt_test_runner = "wabt/test/run-tests.py"
-    subprocess.run([wabt_test_runner, "interp"])
+    target_tests = ["start"]
+    for test in target_tests:
+        test_name = "spec/"
+        wabt_test_runner = "wabt/test/run-tests.py"
+        subprocess.run([wabt_test_runner, test_name, "-v", "-p"])
 
 if __name__ == '__main__':
     main()
