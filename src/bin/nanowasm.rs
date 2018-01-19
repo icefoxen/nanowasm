@@ -17,6 +17,18 @@ fn main() {
         .version("0.1")
         .about("A standalone WebAssembly interpreter in Rust.")
         .arg(Arg::with_name("file").required(true))
+        .arg(Arg::with_name("run-all-exports")
+             .long("run-all-exports")
+             .help("TODO")
+             // TODO: Fix wabt's test suite so it doesn't give this more than once. :/
+             .multiple(true))
+        .arg(Arg::with_name("Enable threads")
+             .long("enable-threads")
+             .help("TODO"))
+        .arg(Arg::with_name("verbose")
+             .short("v")
+             .long("verbose")
+             .help("Enable verbose output"))
         .get_matches();
 
     let input_file = matches

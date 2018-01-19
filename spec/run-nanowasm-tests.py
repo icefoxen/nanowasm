@@ -19,6 +19,8 @@ def main():
     shutil.copyfile(nanowasm_binary, wasm_interp)
 
     # run wabt interpreter tests
+    # TODO Lots of the tests are not reeeeeaally valid for nanowasm,
+    # so we should list a subset of them.
     wabt_test_runner = "wabt/test/run-tests.py"
     subprocess.run([wabt_test_runner, "interp"])
 
