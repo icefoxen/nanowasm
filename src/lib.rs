@@ -973,6 +973,11 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        // Don't know if there's a better place to put this, or a less annoying way of doing it
+        // while still making it always visible, but this is fine for now.
+        #[cfg(target_endian = "big")]
+        println!("WARNING: Running on big-endian target architecture!  Results are *not* guarenteed to be correct!");
+        
         Self {
             store: Store::default(),
             state: State::default(),
