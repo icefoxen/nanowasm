@@ -1,4 +1,4 @@
-//! Common traits and type definitions used everywhere nanowasm.
+//! Common traits and type definitions used everywhere in nanowasm.
 
 use std;
 
@@ -11,9 +11,6 @@ use num::ToPrimitive;
 /// parity-wasm has `elements::FunctionType` which is basically
 /// this but with some extra serialization info we don't
 /// need for execution, so we make our own.
-/// It also wraps it in `elements::Type`, of which the
-/// only member is a `FunctionType`... that might get extended
-/// by wasm in the future but for now we just omit it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncType {
     pub params: Vec<elements::ValueType>,
@@ -36,6 +33,15 @@ impl<'a> From<&'a elements::Type> for FuncType {
 /// An index into a module's `type` vector.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeIdx(pub usize);
+
+/// An index into a module's `function` vector.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FuncIdx(pub usize);
+
+/// An index into a module's `globals` vector.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GlobalIdx(pub usize);
+
 
 /// An actual value used at runtime.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
@@ -205,6 +211,8 @@ pub trait Wrap<T> {
 
 /// Stolen wholesale from parity-wasm
 /// `src/interpreter/value.rs`
+///
+/// Just implements the `Wrap` trait for a given numeric type.
 macro_rules! impl_wrap_into {
 	($from: ident, $into: ident) => {
 		impl Wrap<$into> for $from {
@@ -231,6 +239,8 @@ pub trait Extend<T> {
 	fn extend(self) -> T;
 }
 
+/// Implements the `Extend` trait for a given numeric type.
+///
 /// Also stolen from parity-wasm
 macro_rules! impl_extend_into {
 	($from: ident, $into: ident) => {
@@ -262,10 +272,6 @@ impl_extend_into!(u64, f64);
 impl_extend_into!(f32, f64);
 
 
-/// An index into a module's `function` vector.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct FuncIdx(pub usize);
-
 /// A function ready to be executed.
 #[derive(Debug, Clone)]
 pub struct Func {
@@ -279,7 +285,8 @@ pub struct Func {
 /// Currently, a table is *purely* a mapping of
 /// integers to anyfunc's.
 ///
-/// Obviously mainly there for integration with Javascript.
+/// Obviously mainly there for integration with Javascript,
+/// though it has other uses too.
 #[derive(Debug, Clone)]
 pub struct Table {
     /// Actual data
@@ -356,11 +363,7 @@ impl Memory {
     }
 }
 
-/// An index into a module's `Globals` vector.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct GlobalIdx(pub usize);
-
-
+/// A structure containing runtime data for a global variable.
 #[derive(Debug, Clone)]
 pub struct Global {
     pub mutable: bool,

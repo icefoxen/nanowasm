@@ -17,7 +17,7 @@ struct BlockLabel(usize);
 
 /// The activation record for an executing function.
 #[derive(Debug, Clone, Default)]
-pub struct StackFrame {
+struct StackFrame {
     value_stack: Vec<Value>,
     labels: Vec<BlockLabel>,
     locals: Vec<Value>,
@@ -26,7 +26,6 @@ pub struct StackFrame {
 }
 
 impl StackFrame {
-
     /// Takes a FuncInstance and allocates a stack frame for it, then pushes
     /// the given args to its locals.
     fn from_func_instance(func: &FuncInstance, args: &[Value]) -> Self {
@@ -175,16 +174,16 @@ impl_address_new!(FunctionAddress);
 /// so we find it ahead of time and then store it when the
 /// function is instantiated.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct JumpTarget {
+struct JumpTarget {
     block_start_instruction: usize,
     block_end_instruction: usize,
     /// Only used for if/else statements.
     else_instruction: usize,
 }
 
-/// Contains all the information needed to execute a function.
+/// Contains all the runtime information needed to execute a function
 #[derive(Debug, Clone)]
-pub struct FuncInstance {
+struct FuncInstance {
     functype: FuncType,
     locals: Vec<elements::ValueType>,
     body: Vec<elements::Opcode>,
@@ -267,10 +266,17 @@ impl FuncInstance {
     }
 }
 
-/// Relates all the local indices to globals, functions etc.
-/// from within a module to the global addresses of the Store.
+/// While a LoadedModule contains the specification of a module
+/// in a convenient form, this is a runtime structure that contains
+/// the relationship between module-local indices and global addresses.
+/// So it relates its own local address space to the address space of the
+/// `Store`
+///
+/// It also contains a bit of module-local data, mainly type vectors, that
+/// don't need to be in the Store since they're never communicated between
+/// modules.
 #[derive(Debug, Clone)]
-pub struct ModuleInstance {
+struct ModuleInstance {
     types: Vec<FuncType>,
     functions: Vec<FunctionAddress>,
     table: Option<TableAddress>,
@@ -337,7 +343,7 @@ pub struct State {
 /// and "address" to mean an offset into a global environment.
 /// See <https://webassembly.github.io/spec/core/exec/runtime.html>
 ///
-/// A module then becomes a **module instance** when ready to execute,
+/// A module thus becomes a **module instance** when ready to execute,
 /// which ceases to be a collection of data and becomes a collection
 /// of index-to-address mappings.  A **function instance** then is
 /// the original function definition, plus the a reference to the

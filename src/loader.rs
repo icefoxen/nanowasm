@@ -1,7 +1,26 @@
 use parity_wasm::elements;
 
 use types::*;
-use util::*;
+
+/// Takes a slice of `Local`'s (local variable *specifications*),
+/// and creates a vec of their types.
+///
+/// Slightly trickier than just a map+collect.
+fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
+    // This looks like it should just be a map and collect but actually isn't,
+    // 'cause we need to iterate the inner loop.  We could make it a map but it's
+    // trickier and not worth the bother.
+    let num_local_slots = locals.iter().map(|x| x.count() as usize).sum();
+    let mut v = Vec::with_capacity(num_local_slots);
+    for local in locals {
+        for _i in 0..local.count() {
+            let t = local.value_type();
+            v.push(t);
+        }
+    }
+    v
+}
+
 
 /// A loaded wasm module
 #[derive(Debug, Clone)]
@@ -25,8 +44,11 @@ pub struct LoadedModule {
 }
 
 impl LoadedModule {
-    /// Instantiates and initializes a new module.
-    /// Does NOT validate or run the start function though!
+    /// Instantiates and initializes a new module from the `parity_wasm` module type.
+    /// This basically goes from a representation very close to the raw webassembly
+    /// binary format to a representation more convenient to be loaded.
+    ///
+    /// Does NOT validate the module or run the start function though!
     pub fn new(name: &str, module: elements::Module) -> Self {
         assert_eq!(module.version(), 1);
 
@@ -179,7 +201,10 @@ impl LoadedModule {
 
     /// Validates the module: makes sure types are correct,
     /// all the indices into various parts of the module are valid, etc.
+    ///
+    /// Currently unimplemented.
     pub fn validate(&mut self) {
+        // TODO: Do this!  Unless we can use the parity_wasm validator...
         self.validated = true;
     }
 }

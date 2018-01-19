@@ -1,7 +1,6 @@
-//! Misc numerical and handiness functions. functions.
+//! Misc numerical stuff and other handy functions.
 
 use num;
-use parity_wasm::elements;
 
 /// fcopysign:
 ///
@@ -59,28 +58,3 @@ pub fn u64_to_f64(i: u64) -> f64 {
     // disallowed by wasm.  :-P
     f64::from_bits(i)
 }
-
-
-
-
-/// Takes a slice of `Local`'s (local variable *specifications*),
-/// and creates a vec of their types.
-///
-/// Slightly trickier than just a map+collect.
-pub(crate) fn types_from_locals(locals: &[elements::Local]) -> Vec<elements::ValueType> {
-    // This looks like it should just be a map and collect but actually isn't,
-    // 'cause we need to iterate the inner loop.  We could make it a map but it's
-    // trickier and not worth the bother.
-    let num_local_slots = locals.iter().map(|x| x.count() as usize).sum();
-    let mut v = Vec::with_capacity(num_local_slots);
-    for local in locals {
-        for _i in 0..local.count() {
-            let t = local.value_type();
-            v.push(t);
-        }
-    }
-    v
-}
-
-
-
