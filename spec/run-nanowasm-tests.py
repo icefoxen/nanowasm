@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
 
+import os
 import shutil
 import subprocess
 
+
 def main():
+   wast2json_binary = "wabt/bin/wast2json"
+   target_tests = ["start.wast"]
+   outdir = "OUT/"
+   if os.path.isdir(outdir):
+       shutil.rmtree(outdir)
+   os.makedirs(outdir)
+   for test in target_tests:
+       test_name = "wasm_testsuite/" + test
+       print("Generating", test_name)
+       subprocess.run([wast2json_binary, test_name, "-o", outdir + test + ".json"])
+
+def main_old():
     nanowasm_binary_debug = "../target/debug/nanowasm"
     nanowasm_binary_release = "../target/release/nanowasm"
 
