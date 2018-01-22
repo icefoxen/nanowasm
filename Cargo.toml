@@ -14,8 +14,11 @@ categories = ["emulators", "api-bindings"]
 maintenance = { status = "experimental" }
 
 [dependencies]
-parity-wasm = "0.20"
+parity-wasm = "0.21"
 clap = "2"
 byteorder = "1"
 num = "0.1"
 nom = "3"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"

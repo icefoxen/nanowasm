@@ -6,16 +6,24 @@ import subprocess
 
 
 def main():
-   wast2json_binary = "wabt/bin/wast2json"
-   target_tests = ["start.wast"]
-   outdir = "OUT/"
-   if os.path.isdir(outdir):
-       shutil.rmtree(outdir)
-   os.makedirs(outdir)
-   for test in target_tests:
-       test_name = "wasm_testsuite/" + test
-       print("Generating", test_name)
-       subprocess.run([wast2json_binary, test_name, "-o", outdir + test + ".json"])
+    wast2json_binary = "wabt/bin/wast2json"
+    target_tests = ["start.wast"]
+    outdir = "OUT/"
+    if os.path.isdir(outdir):
+        shutil.rmtree(outdir)
+    os.makedirs(outdir)
+    for test in target_tests:
+        test_name = "wasm_testsuite/" + test
+        print("Generating", test_name)
+        # TODO: Make sure this completes successfully
+        subprocess.run([wast2json_binary, test_name, "-o", outdir + test + ".json"])
+    
+
+    # Build nanowasm
+    cargo_command_line = ["cargo", "build"]
+    # TODO: Make sure this completes successfully
+    subprocess.run(cargo_command_line)
+
 
 def main_old():
     nanowasm_binary_debug = "../target/debug/nanowasm"
