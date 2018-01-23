@@ -11,17 +11,18 @@ use interpreter::*;
 fn test_validate_failure() {
     let input_file = "test_programs/inc.wasm";
     let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mod_instance = LoadedModule::new("inc", module);
-    let _interp = Interpreter::new().with_module(mod_instance);
+    let loaded_module = LoadedModule::new("inc", module);
+    let validated_module = loaded_module.validate();
+    let _interp = Interpreter::new().with_module(validated_module);
 }
 
 #[test]
 fn test_create() {
     let input_file = "test_programs/inc.wasm";
     let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mut mod_instance = LoadedModule::new("inc", module);
-    mod_instance.validate();
-    let interp = Interpreter::new().with_module(mod_instance);
+    let loaded_module = LoadedModule::new("inc", module);
+    let validated_module = loaded_module.validate();
+    let mut interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
     // assert!(false);
 }
@@ -30,9 +31,9 @@ fn test_create() {
 fn test_create_fib() {
     let input_file = "test_programs/fib.wasm";
     let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mut mod_instance = LoadedModule::new("fib", module);
-    mod_instance.validate();
-    let interp = Interpreter::new().with_module(mod_instance);
+    let mut loaded_module = LoadedModule::new("fib", module);
+    let validated_module = loaded_module.validate();
+    let interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
     // assert!(false);
 }
@@ -41,9 +42,9 @@ fn test_create_fib() {
 fn test_run_fib() {
     let input_file = "test_programs/fib.wasm";
     let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mut mod_instance = LoadedModule::new("fib", module);
-    mod_instance.validate();
-    let mut interp = Interpreter::new().with_module(mod_instance);
+    let mut loaded_module = LoadedModule::new("fib", module);
+    let validated_module = loaded_module.validate();
+    let mut interp = Interpreter::new().with_module(validated_module);
 
     interp.run(FunctionAddress(1), &vec![Value::I32(30)]);
     assert!(false);
@@ -76,8 +77,8 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
         .build()
         .build();
     let mut loaded = LoadedModule::new("test", module);
-    loaded.validate();
-    let mut interp = Interpreter::new().with_module(loaded);
+    let validated_module = loaded.validate();
+    let mut interp = Interpreter::new().with_module(validated_module);
     let run_result = interp.run(FunctionAddress(0), args);
     assert_eq!(run_result, desired_output)
 }

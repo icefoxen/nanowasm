@@ -489,8 +489,8 @@ impl Interpreter {
     ///
     /// We could load all the modules in arbitrary order, then validate+link
     /// them at the end, but meh.
-    pub fn with_module(mut self, module: LoadedModule) -> Self {
-        assert!(module.validated);
+    pub fn with_module(mut self, module: ValidatedModule) -> Self {
+        let module: LoadedModule = module.into_inner();
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
         let mut functions = vec![];
         let table = None;

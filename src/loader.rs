@@ -38,8 +38,18 @@ pub struct LoadedModule {
     /// wasm 1.0 defines only a single memory.
     pub mem: Memory,
     pub globals: Vec<Global>,
+}
 
-    pub validated: bool,
+/// A wrapper type that assures at compile-time that
+/// a module has been validated.
+#[derive(Debug, Clone)]
+pub struct ValidatedModule(LoadedModule);
+
+impl ValidatedModule {
+    /// Extracts the actual `LoadedModule` from the `ValidatedModule`
+    pub(crate) fn into_inner(self) -> LoadedModule {
+        self.0
+    }
 }
 
 impl LoadedModule {
@@ -60,8 +70,6 @@ impl LoadedModule {
             tables: Table::new(),
             mem: Memory::new(None),
             globals: vec![],
-
-            validated: false,
         };
 
         // Allocate types
@@ -201,9 +209,8 @@ impl LoadedModule {
     /// Validates the module: makes sure types are correct,
     /// all the indices into various parts of the module are valid, etc.
     ///
-    /// Currently unimplemented.
-    pub fn validate(&mut self) {
-        // TODO: Do this!  Unless we can use the parity_wasm validator...
-        self.validated = true;
+    /// TODO: Currently does nothing
+    pub fn validate(self) -> ValidatedModule {
+        ValidatedModule(self)
     }
 }
