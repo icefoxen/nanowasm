@@ -5,6 +5,12 @@ use std;
 use parity_wasm::elements;
 use num::ToPrimitive;
 
+/// This should be in std by now dammit!
+pub trait TryFrom<T> where Self: Sized {
+    type Error;
+    fn try_from(value: T) -> Result<Self, Self::Error>;
+}
+
 /// A type signature for a function type, intended to
 /// go into the `types` section of a module.
 ///
@@ -360,11 +366,61 @@ impl Memory {
     }
 }
 
+
+/// A restricted subset of `parity::elements::Opcode` that is
+/// valid in a constant expression (ie, data initializers)
+///
+/// Defined at <https://webassembly.github.io/spec/core/valid/instructions.html#valid-constant>
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum ConstOpcode {
+    I32Const(i32),
+    I64Const(i64),
+    F32Const(f32),
+    F64Const(f64),
+    GetGlobal(u32),
+}
+
+impl TryFrom<elements::Opcode> for ConstOpcode {
+    type Error = elements::Opcode;
+    fn try_from(opcode: elements::Opcode) -> Result<ConstOpcode, elements::Opcode> {
+        match opcode {
+            elements::Opcode::I32Const(i) => Ok(ConstOpcode::I32Const(i as i32)),
+            elements::Opcode::I64Const(i) => Ok(ConstOpcode::I64Const(i as i64)),
+            elements::Opcode::F32Const(f) => Ok(ConstOpcode::F32Const(f32::from_bits(f))),
+            elements::Opcode::F64Const(f) => Ok(ConstOpcode::F64Const(f64::from_bits(f))),
+            elements::Opcode::GetGlobal(i) => Ok(ConstOpcode::GetGlobal(i)),
+            op => Err(op)
+        }
+    }
+}
+
+
+/// A constant expression; a list of opcodes
+/// that can only be `const` or `get_global` instructions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstExpr(pub Vec<ConstOpcode>);
+
+impl<'a> TryFrom<&'a [elements::Opcode]> for ConstExpr {
+    type Error = elements::Opcode;
+    fn try_from(opcodes: &[elements::Opcode]) -> Result<ConstExpr, elements::Opcode> {
+        // Filter out `End` opcodes which are valid but uninteresting,
+        // then try to turn into ConstOpcode and collect into Result<Vec<...>, ...>
+        // TODO: Actually validate we end with `End` someday?
+        let ops = opcodes.iter()
+            .filter(|op| match **op { elements::Opcode::End => true, _ => false } )
+            .cloned()
+            .map(ConstOpcode::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ConstExpr(ops))
+    }
+}
+
 /// A structure containing runtime data for a global variable.
 #[derive(Debug, Clone)]
 pub struct Global {
     pub mutable: bool,
     pub variable_type: elements::ValueType,
     pub value: Value,
-    pub init_code: Vec<elements::Opcode>,
+    pub init_code: ConstExpr,
 }
+

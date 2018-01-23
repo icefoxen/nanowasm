@@ -35,8 +35,13 @@ pub struct LoadedModule {
     /// wasm 1.0 defines only a single table,
     /// but we can import multiple of them?
     pub tables: Table,
+    /// Initializer code for tables
+    /// `(offset, values)`
+    pub table_initializers: Vec<(ConstExpr, Vec<FuncIdx>)>,
     /// wasm 1.0 defines only a single memory.
     pub mem: Memory,
+    /// Initializer code for data segments.
+    pub mem_initializers: Vec<(ConstExpr, Vec<u8>)>,
     pub globals: Vec<Global>,
 }
 
@@ -68,7 +73,9 @@ impl LoadedModule {
             start: None,
 
             tables: Table::new(),
+            table_initializers: vec![],
             mem: Memory::new(None),
+            mem_initializers: vec![],
             globals: vec![],
         };
 
@@ -116,7 +123,7 @@ impl LoadedModule {
             // 0 or 1 elements in it, so.
             assert!(
                 table.entries().len() < 2,
-                "More than one memory entry, should never happen!"
+                "More than one table entry, should never happen!"
             );
             if let Some(table) = table.entries().iter().next() {
                 // TODO: As far as I can tell, the memory's minimum size is never used?
@@ -129,10 +136,19 @@ impl LoadedModule {
                 }
             }
 
-            if let Some(_elements) = module.elements_section() {
-                // TODO
-                println!("Elements");
-                unimplemented!();
+            if let Some(elements) = module.elements_section() {
+                for segment in elements.entries() {
+                    let table_idx = segment.index();
+                    assert_eq!(table_idx, 0, "Had an Elements segment that referred to table != 0!");
+                    let offset_code = ConstExpr::try_from(segment.offset().code())
+                        .expect("TODO");
+
+                    let members: Vec<FuncIdx> = segment.members()
+                        .iter()
+                        .map(|x| FuncIdx(*x as usize))
+                        .collect();
+                    m.table_initializers.push((offset_code, members));
+                }
             }
         }
 
@@ -155,10 +171,15 @@ impl LoadedModule {
                 }
             }
 
-            if let Some(_data) = module.data_section() {
-                // TODO
-                println!("data");
-                unimplemented!();
+            if let Some(data) = module.data_section() {
+                for segment in data.entries() {
+                    let mem_idx = segment.index();
+                    assert_eq!(mem_idx, 0, "Had a Data segment that referred to memory != 0!");
+                    let offset_code = ConstExpr::try_from(segment.offset().code())
+                        .expect("TODO");
+                    let members = segment.value().to_owned();
+                    m.mem_initializers.push((offset_code, members));
+                }
             }
         }
 
@@ -167,7 +188,8 @@ impl LoadedModule {
             let global_iter = globals.entries().iter().map(|global| {
                 let global_type = global.global_type().content_type();
                 let mutability = global.global_type().is_mutable();
-                let init_code = Vec::from(global.init_expr().code());
+                let init_code = ConstExpr::try_from(global.init_expr().code())
+                        .expect("TODO");
                 Global {
                     variable_type: global_type,
                     mutable: mutability,
