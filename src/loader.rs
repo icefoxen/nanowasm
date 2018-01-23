@@ -43,6 +43,10 @@ pub struct LoadedModule {
     /// Initializer code for data segments.
     pub mem_initializers: Vec<(ConstExpr, Vec<u8>)>,
     pub globals: Vec<Global>,
+    /// Exported values
+    pub exports: Vec<Export>,
+    /// Imported values
+    pub imports: Vec<Import>,
 }
 
 /// A wrapper type that assures at compile-time that
@@ -77,6 +81,9 @@ impl LoadedModule {
             mem: Memory::new(None),
             mem_initializers: vec![],
             globals: vec![],
+
+            imports: vec![],
+            exports: vec![],
         };
 
         // Allocate types
@@ -205,14 +212,25 @@ impl LoadedModule {
 
         // Allocate imports
         if let Some(imports) = module.import_section() {
-            println!("Imports: {:?}", imports);
-            unimplemented!();
+            for entry in imports.entries() {
+                let i = Import {
+                    module_name: entry.module().to_owned(),
+                    field_name: entry.field().to_owned(),
+                    value: entry.external().clone(),
+                };
+                m.imports.push(i);
+            }
         }
 
         // Allocate exports
         if let Some(exports) = module.export_section() {
-            println!("Exports: {:?}", exports);
-            unimplemented!();
+            for entry in exports.entries() {
+                let e = Export {
+                    name: entry.field().to_owned(),
+                    value: entry.internal().clone(),
+                };
+                m.exports.push(e);
+            }
         }
 
         // Check for start section

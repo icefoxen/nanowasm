@@ -406,6 +406,7 @@ impl<'a> TryFrom<&'a [elements::Opcode]> for ConstExpr {
         // Filter out `End` opcodes which are valid but uninteresting,
         // then try to turn into ConstOpcode and collect into Result<Vec<...>, ...>
         // TODO: Actually validate we end with `End` someday?
+        // peekable() might make that easier.
         let ops = opcodes.iter()
             .filter(|op| **op != elements::Opcode::End)
             .cloned()
@@ -422,5 +423,18 @@ pub struct Global {
     pub variable_type: elements::ValueType,
     pub value: Value,
     pub init_code: ConstExpr,
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub module_name: String,
+    pub field_name: String,
+    pub value: elements::External,
+}
+
+#[derive(Debug, Clone)]
+pub struct Export {
+    pub name: String,
+    pub value: elements::Internal,
 }
 
