@@ -407,7 +407,7 @@ impl<'a> TryFrom<&'a [elements::Opcode]> for ConstExpr {
         // then try to turn into ConstOpcode and collect into Result<Vec<...>, ...>
         // TODO: Actually validate we end with `End` someday?
         let ops = opcodes.iter()
-            .filter(|op| match **op { elements::Opcode::End => true, _ => false } )
+            .filter(|op| **op != elements::Opcode::End)
             .cloned()
             .map(ConstOpcode::try_from)
             .collect::<Result<Vec<_>, _>>()?;
