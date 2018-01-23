@@ -34,15 +34,15 @@ pub struct LoadedModule {
     pub start: Option<usize>,
     /// wasm 1.0 defines only a single table,
     /// but we can import multiple of them?
-    pub tables: Table,
+    pub tables: Option<Table>,
     /// Initializer code for tables
     /// `(offset, values)`
     pub table_initializers: Vec<(ConstExpr, Vec<FuncIdx>)>,
     /// wasm 1.0 defines only a single memory.
-    pub mem: Memory,
+    pub mem: Option<Memory>,
     /// Initializer code for data segments.
     pub mem_initializers: Vec<(ConstExpr, Vec<u8>)>,
-    pub globals: Vec<Global>,
+    pub globals: Vec<(Global, ConstExpr)>,
     /// Exported values
     pub exports: Vec<Export>,
     /// Imported values
@@ -76,9 +76,9 @@ impl LoadedModule {
             funcs: vec![],
             start: None,
 
-            tables: Table::new(),
+            tables: None,
             table_initializers: vec![],
-            mem: Memory::new(None),
+            mem: None,
             mem_initializers: vec![],
             globals: vec![],
 
@@ -138,23 +138,25 @@ impl LoadedModule {
                 let max = table.limits().maximum();
 
                 // TODO: It's apparently valid for a memory to have no max size?
+                let mut t = Table::new();
                 if let Some(max) = max {
-                    m.tables.fill(max);
+                    t.fill(max);
                 }
-            }
+                m.tables = Some(t);
 
-            if let Some(elements) = module.elements_section() {
-                for segment in elements.entries() {
-                    let table_idx = segment.index();
-                    assert_eq!(table_idx, 0, "Had an Elements segment that referred to table != 0!");
-                    let offset_code = ConstExpr::try_from(segment.offset().code())
-                        .expect("TODO");
-
-                    let members: Vec<FuncIdx> = segment.members()
-                        .iter()
-                        .map(|x| FuncIdx(*x as usize))
-                        .collect();
-                    m.table_initializers.push((offset_code, members));
+                if let Some(elements) = module.elements_section() {
+                    for segment in elements.entries() {
+                        let table_idx = segment.index();
+                        assert_eq!(table_idx, 0, "Had an Elements segment that referred to table != 0!");
+                        let offset_code = ConstExpr::try_from(segment.offset().code())
+                            .expect("TODO");
+                        
+                        let members: Vec<FuncIdx> = segment.members()
+                            .iter()
+                            .map(|x| FuncIdx(*x as usize))
+                            .collect();
+                        m.table_initializers.push((offset_code, members));
+                    }
                 }
             }
         }
@@ -173,44 +175,40 @@ impl LoadedModule {
                 let max = memory.limits().maximum();
 
                 // TODO: It's apparently valid for a memory to have no max size?
-                if let Some(max) = max {
-                    m.mem.resize(max as i32);
-                }
-            }
+                let mut mem = Memory::new(max);
 
-            if let Some(data) = module.data_section() {
-                for segment in data.entries() {
-                    let mem_idx = segment.index();
-                    assert_eq!(mem_idx, 0, "Had a Data segment that referred to memory != 0!");
-                    let offset_code = ConstExpr::try_from(segment.offset().code())
-                        .expect("TODO");
-                    let members = segment.value().to_owned();
-                    m.mem_initializers.push((offset_code, members));
+                if let Some(data) = module.data_section() {
+                    for segment in data.entries() {
+                        let mem_idx = segment.index();
+                        assert_eq!(mem_idx, 0, "Had a Data segment that referred to memory != 0!");
+                        let offset_code = ConstExpr::try_from(segment.offset().code())
+                            .expect("TODO");
+                        let members = segment.value().to_owned();
+                        m.mem_initializers.push((offset_code, members));
+                    }
                 }
+                m.mem = Some(mem);
             }
         }
 
-        // Allocate globals
+        // Load globals
         if let Some(globals) = module.global_section() {
             let global_iter = globals.entries().iter().map(|global| {
                 let global_type = global.global_type().content_type();
                 let mutability = global.global_type().is_mutable();
                 let init_code = ConstExpr::try_from(global.init_expr().code())
                         .expect("TODO");
-                Global {
+                let global = Global {
                     variable_type: global_type,
                     mutable: mutability,
                     value: Value::default_from_type(global_type),
-                    // TODO: The init_code must be zero or more `const` instructions
-                    // followed by `end`
-                    // See https://webassembly.github.io/spec/core/syntax/modules.html#syntax-global
-                    init_code: init_code,
-                }
+                };
+                (global, init_code)
             });
             m.globals.extend(global_iter);
         }
 
-        // Allocate imports
+        // Load imports
         if let Some(imports) = module.import_section() {
             for entry in imports.entries() {
                 let i = Import {
@@ -222,7 +220,7 @@ impl LoadedModule {
             }
         }
 
-        // Allocate exports
+        // Load exports
         if let Some(exports) = module.export_section() {
             for entry in exports.entries() {
                 let e = Export {

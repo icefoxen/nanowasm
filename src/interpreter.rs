@@ -356,7 +356,7 @@ impl Interpreter {
         // Don't know if there's a better place to put this, or a less annoying way of doing it
         // while still making it always visible, but this is fine for now.
         #[cfg(target_endian = "big")]
-        println!("WARNING: Running on big-endian target architecture!  Results are *not* guarenteed to be correct!");
+        eprintln!("WARNING: Running on big-endian target architecture!  Results are *not* guarenteed to be correct!");
 
         Self {
             store: Store::default(),
@@ -493,10 +493,6 @@ impl Interpreter {
         let module: LoadedModule = module.into_inner();
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
         let mut functions = vec![];
-        let table = None;
-        let memory = None;
-        let globals = vec![];
-        let types = module.types.clone();
         for func in module.funcs.iter() {
             let address = FunctionAddress(self.state.funcs.len());
             let functype = module.types[func.typeidx.0].clone();
@@ -511,7 +507,56 @@ impl Interpreter {
             self.state.funcs.push(instance);
             functions.push(address);
         }
-        // TODO: table, memory, globals
+
+        // If the module has a memory, clone it, initialize it, shove
+        // it into the store, and return the address of it.  Otherwise,
+        // return None.
+        let memory = if let Some(mut memory) = module.mem.clone() {
+            memory.initialize(&module.mem_initializers);
+            let mem_addr = MemoryAddress(self.store.mems.len());
+            self.store.mems.push(memory);
+            Some(mem_addr)
+        } else {
+            None
+        };
+
+        // Like memories, if the module has a table, clone it, initialize it, shove
+        // it into the store, and return the address of it.  Otherwise,
+        // return None.
+        let table = if let Some(mut table) = module.tables.clone() {
+            table.initialize(&module.table_initializers);
+            let table_addr = TableAddress(self.store.tables.len());
+            self.store.tables.push(table);
+            Some(table_addr)
+        } else {
+            None
+        };
+
+        // This has to be in its own block 'cause we borrow `module`
+        // and don't clone all of it.
+        let globals = {
+            // Create an iterator of initialized Global values
+            let initialized_globals = module.globals.iter()
+                .map(|&(ref global, ref init)| {
+                    let mut g = global.clone();
+                    g.initialize(init)
+                        .expect("TODO");
+                    g
+                });
+            
+            // Get the address of the next Global slot,
+            // shove all the initialized Global's into it,
+            // and then get the address again, and that's the
+            // mapping for our GlobalAddress's for this module.
+            let global_addr_start = self.store.globals.len();
+            self.store.globals.extend(initialized_globals);
+            let global_addr_end = self.store.globals.len();
+            (global_addr_start..global_addr_end)
+                .map(GlobalAddress)
+                .collect()
+        };
+        let types = module.types.clone();        
+        // TODO: globals
         // all also need to come from the module!
         let inst = ModuleInstance {
             types,

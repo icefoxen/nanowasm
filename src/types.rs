@@ -312,6 +312,12 @@ impl Table {
         self.data.resize(size as usize, FuncIdx(std::usize::MAX));
         self.max = Some(size);
     }
+
+    pub fn initialize(&mut self, inits: &[(ConstExpr, Vec<FuncIdx>)]) -> Result<(), ()> {
+        // TODO
+        Ok(())
+    }
+
 }
 
 /// A structure containing a memory space.
@@ -363,6 +369,11 @@ impl Memory {
         self.data.resize(new_size as usize, 0);
         // BUGGO: Augh, the max size semantics here are awful, fix them.
         //self.max = Some(size);
+    }
+
+    pub fn initialize(&mut self, inits: &[(ConstExpr, Vec<u8>)]) -> Result<(), ()> {
+        // TODO
+        Ok(())
     }
 }
 
@@ -422,7 +433,13 @@ pub struct Global {
     pub mutable: bool,
     pub variable_type: elements::ValueType,
     pub value: Value,
-    pub init_code: ConstExpr,
+}
+
+impl Global {
+    pub fn initialize(&mut self, init_code: &ConstExpr) -> Result<(), ()> {
+        // TODO
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
