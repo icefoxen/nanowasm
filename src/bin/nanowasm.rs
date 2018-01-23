@@ -134,11 +134,20 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 // though...
                 let mut file_path: path::PathBuf = file_dir.into();
                 file_path.push(filename);
+                print!("Loading module from file {}: ", filename);
                 // TODO: Make it return errors properly.
                 let module = parity_wasm::deserialize_file(&file_path)
                     .unwrap();
-                current_module = Some(module);
-                println!("Loaded module {} ok", filename);
+                current_module = Some(module.clone());
+                print!("Loaded ");
+
+                let mut mod_instance = LoadedModule::new("fib", module);
+                mod_instance.validate();
+                let _interp = Interpreter::new().with_module(mod_instance);
+
+                print!("Instantiated ");
+                println!("Ok.");
+
             },
             Command::AssertReturn { .. } => (),
             Command::AssertReturnCanonicalNan { .. } => (),
@@ -149,10 +158,10 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 //file_path.push(filename);
                 //let module = parity_wasm::deserialize_file(&file_path).unwrap();
                 //println!("Module should be invalid: {:#?}", module)
-                println!("TODO: parity-wasm does not yet check for malformed modules");
+                println!("TODO: Need to instantiate/validate the module before we can test this assertion");
             },
             Command::AssertMalformed { .. } => {
-                println!("TODO: parity-wasm does not yet check for malformed modules");
+                println!("TODO: Need to instantiate/validate the module before we can test this assertion");
             },
             Command::AssertUninstantiable { .. } => (),
             Command::AssertExhaustion { .. } => (),
