@@ -26,12 +26,17 @@ The road map is, more or less in order:
 
 # Building programs
 
-Fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like assemblers.
+We need to fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like
+an assembler.  We use some of wabt for test infrastructure anyway, so we have a submodule for it; check out and
+build that.
+
 
 ```
 sudo apt install clang cmake
-git clone --recursive https://github.com/WebAssembly/wabt.git
-cd wabt
+git clone --recursive https://github.com/icefoxen/nanowasm
+# Or if you've already checked out nanowasm, cd into it and run:
+# git submodule init --recursive --remote
+cd nanowasm/spec/wabt
 make -j$(nproc)
 ```
 
@@ -48,11 +53,22 @@ This should create a `inc.wasm` program which is what you can actually load and 
 cargo run -- test_programs/inc.wasm
 ```
 
-...except the bin target doesn't actually use the interpreter yet XD
+# Safety
+
+This should aim for the goal that if a wasm module is invalid, it will return a `Result::Err` on trying to load or
+validate it, or construct a program from it.  Then actually executing the code should not need to return a `Result`
+because it has already been verified correct; things that are incorrect are bugs in the interpreter or verifier and should
+result in a panic (should we use `assert!` or `debug_assert!` here?  Depends on the situation; `assert!` can
+sometimes lead to the compiler making smarter code, for example eliding bounds checks after one).
+
+One place where this is *not* possible to statically verify is if you set resource bounds and the program exceeds
+them.  Need to think about this.
 
 # Similar projects
 
- * parity-wasm: A crate for serializing/deserializing wasm code.  Also includes its own interpreter, but I wanted to write my own and I find theirs hard to extend
+ * parity-wasm: A crate for serializing/deserializing wasm code.  
+ * [wasmi](https://github.com/pepyakin/wasmi): A webassembly interpreter; used to be part of parity-wasm but got
+   split off into its own thing.  Quite good, but I wanted to write my own
  * <https://github.com/sunfishcode/wasmstandalone>: A wasm standalone JIT.
  * [WebAssembly reference interpreter](https://github.com/WebAssembly/spec/tree/master/interpreter)
  * [WebAssembly Binary Toolkit](https://github.com/WebAssembly/wabt)
