@@ -274,6 +274,8 @@ impl FuncInstance {
 /// modules.
 #[derive(Debug, Clone)]
 struct ModuleInstance {
+    name: String,
+    exports: Vec<Export>,
     types: Vec<FuncType>,
     functions: Vec<FunctionAddress>,
     table: Option<TableAddress>,
@@ -512,7 +514,8 @@ impl Interpreter {
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         let memory = if let Some(mut memory) = module.mem.clone() {
-            memory.initialize(&module.mem_initializers);
+            memory.initialize(&module.mem_initializers)
+                .expect("Invalid memory init");
             let mem_addr = MemoryAddress(self.store.mems.len());
             self.store.mems.push(memory);
             Some(mem_addr)
@@ -524,7 +527,8 @@ impl Interpreter {
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         let table = if let Some(mut table) = module.tables.clone() {
-            table.initialize(&module.table_initializers);
+            table.initialize(&module.table_initializers)
+                .expect("Invalid table init");
             let table_addr = TableAddress(self.store.tables.len());
             self.store.tables.push(table);
             Some(table_addr)
@@ -555,10 +559,12 @@ impl Interpreter {
                 .map(GlobalAddress)
                 .collect()
         };
-        let types = module.types.clone();        
-        // TODO: globals
-        // all also need to come from the module!
+        let types = module.types.clone();
+        let name = module.name.clone();
+        let exports = module.exports.clone();
         let inst = ModuleInstance {
+            name,
+            exports,
             types,
             functions,
             table,
