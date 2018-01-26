@@ -284,6 +284,12 @@ struct ModuleInstance {
     // TODO: Start function!
 }
 
+impl ModuleInstance {
+    fn resolve_imports(&mut self, other_modules: &[ModuleInstance]) {
+        
+    }
+}
+
 /// All the *mutable* parts of the interpreter state.
 /// This slightly wacky structure helps keep borrows from
 /// being awful, a little bit.
@@ -562,7 +568,7 @@ impl Interpreter {
         let types = module.types.clone();
         let name = module.name.clone();
         let exports = module.exports.clone();
-        let inst = ModuleInstance {
+        let mut inst = ModuleInstance {
             name,
             exports,
             types,
@@ -571,6 +577,7 @@ impl Interpreter {
             memory,
             globals,
         };
+        inst.resolve_imports();
         self.state.modules.insert(module.name.to_owned(), module);
         self.state.module_instances.push(inst);
         self
