@@ -577,7 +577,7 @@ impl Interpreter {
             memory,
             globals,
         };
-        inst.resolve_imports();
+        inst.resolve_imports(&self.state.module_instances);
         self.state.modules.insert(module.name.to_owned(), module);
         self.state.module_instances.push(inst);
         self
