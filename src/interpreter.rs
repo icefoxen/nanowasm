@@ -559,13 +559,15 @@ impl Interpreter {
 
         // Start function.
         inst.start = module.start.map(|start_idx| inst.functions[start_idx.0]);
+        // Save it for later too.
+        let start_function = inst.start;
 
         // Great, instance is created, add it to the State
         self.state.modules.insert(module.name.to_owned(), module);
         self.state.module_instances.push(inst);
 
         // Run start function.
-        if let Some(function_addr) = module.start {
+        if let Some(function_addr) = start_function {
             Interpreter::exec(&mut self.store, &self.state, function_addr, &[]);
         }
 
