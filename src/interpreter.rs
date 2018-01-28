@@ -284,12 +284,80 @@ struct ModuleInstance {
     // TODO: Start function!
 }
 
+
+/// Returns whether or not the export and import have the same type.
+/// ie, both are functions, or both are memory's, etc.
+pub fn export_matches_import(export: elements::Internal, import: elements::External) -> bool {
+    match export {
+        elements::Internal::Function(_) => {
+            match import {
+                elements::External::Function(_) => true,
+                _ => false,
+            }
+        }
+        elements::Internal::Table(_) => {
+            match import {
+                elements::External::Table(_) => true,
+                _ => false,
+            }
+        }
+        elements::Internal::Memory(_) => {
+            match import {
+                elements::External::Memory(_) => true,
+                _ => false,
+            }
+        }
+        elements::Internal::Global(_) => {
+            match import {
+                elements::External::Global(_) => true,
+                _ => false,
+            }
+        }
+    }
+}
+
 impl ModuleInstance {
     fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) {
         for import in &module.imports {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
                 .expect("Import without a matching module");
+            
+            let export = target_module.exports.iter()
+                .find(|e| e.name == import.field_name)
+                .expect("Cannot find export in module matching import!");
+
+            if !export_matches_import(export.value, import.value) {
+                panic!("Export and import are different types!");
+            }
+
+            // TODO: Validate the External memory/table/function/etc crap more
+
+            // Okay, now that we've validated everything, we actually
+            // resolve the indices of the import to addresses and add
+            // them to the local module's namespace.
+            match export.value {
+                elements::Internal::Function(i) => {
+                    let addr = target_module.functions[i as usize];
+                    self.functions.push(addr);
+                }
+                elements::Internal::Table(_i) => {
+                    // TODO: The "unwrap" here and for Memory 
+                    // forms our ghetto error-checking;
+                    // since we can only have one memory or table,
+                    // the index is irrelevant.
+                    let addr = target_module.table.unwrap();
+                    self.table = Some(addr);
+                }
+                elements::Internal::Memory(_i) => {
+                    let addr = target_module.memory.unwrap();
+                    self.memory = Some(addr);
+                }
+                elements::Internal::Global(i) => {
+                    let addr = target_module.globals[i as usize];
+                    self.globals.push(addr);
+                }
+            }
         }
     }
 }
@@ -504,7 +572,28 @@ impl Interpreter {
     pub fn with_module(mut self, module: ValidatedModule) -> Self {
         let module: LoadedModule = module.into_inner();
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
-        let mut functions = vec![];
+
+        // We MUST load imports first because they consume the first indices
+        // before all local definitions.
+        // "Every import defines an index in the respective index space. In each 
+        // index space, the indices of imports go before the first index of any 
+        // definition contained in the module itself."
+        
+        let types = module.types.clone();
+        let name = module.name.clone();
+        let exports = module.exports.clone();
+        let mut inst = ModuleInstance {
+            name,
+            exports,
+            types,
+            functions: vec![],
+            table: None,
+            memory: None,
+            globals: vec![],
+        };
+        inst.resolve_imports(&module, &self.state.module_instances);
+
+
         for func in module.funcs.iter() {
             let address = FunctionAddress(self.state.funcs.len());
             let functype = module.types[func.typeidx.0].clone();
@@ -517,13 +606,16 @@ impl Interpreter {
             };
             println!("Function: {:?}", instance);
             self.state.funcs.push(instance);
-            functions.push(address);
+            inst.functions.push(address);
         }
 
+        // It's sorta meaningless to define a memory when we already
+        // import one, since we can only have one.
+        assert!(inst.memory.is_none());
         // If the module has a memory, clone it, initialize it, shove
         // it into the store, and return the address of it.  Otherwise,
         // return None.
-        let memory = if let Some(mut memory) = module.mem.clone() {
+        inst.memory = if let Some(mut memory) = module.mem.clone() {
             memory.initialize(&module.mem_initializers)
                 .expect("Invalid memory init");
             let mem_addr = MemoryAddress(self.store.mems.len());
@@ -533,10 +625,14 @@ impl Interpreter {
             None
         };
 
+
+        // Same as memory's above; meaningless to define one if we
+        // import one.
+        assert!(inst.table.is_none());
         // Like memories, if the module has a table, clone it, initialize it, shove
         // it into the store, and return the address of it.  Otherwise,
         // return None.
-        let table = if let Some(mut table) = module.tables.clone() {
+        inst.table = if let Some(mut table) = module.tables.clone() {
             table.initialize(&module.table_initializers)
                 .expect("Invalid table init");
             let table_addr = TableAddress(self.store.tables.len());
@@ -548,7 +644,7 @@ impl Interpreter {
 
         // This has to be in its own block 'cause we borrow `module`
         // and don't clone all of it.
-        let globals = {
+        inst.globals = {
             // Create an iterator of initialized Global values
             let initialized_globals = module.globals.iter()
                 .map(|&(ref global, ref init)| {
@@ -569,19 +665,8 @@ impl Interpreter {
                 .map(GlobalAddress)
                 .collect()
         };
-        let types = module.types.clone();
-        let name = module.name.clone();
-        let exports = module.exports.clone();
-        let mut inst = ModuleInstance {
-            name,
-            exports,
-            types,
-            functions,
-            table,
-            memory,
-            globals,
-        };
-        inst.resolve_imports(&module, &self.state.module_instances);
+
+        // Great, instance is created, add it to the State
         self.state.modules.insert(module.name.to_owned(), module);
         self.state.module_instances.push(inst);
         self
