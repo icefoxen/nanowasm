@@ -26,9 +26,8 @@ The road map is, more or less in order:
 
 # Building programs
 
-We need to fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like
-an assembler.  We use some of wabt for test infrastructure anyway, so we have a submodule for it; check out and
-build that.
+It's useful to fetch and build [wabt](https://github.com/WebAssembly/wabt), which contains useful low-level tools like
+an assembler.
 
 
 ```

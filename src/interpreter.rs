@@ -285,8 +285,12 @@ struct ModuleInstance {
 }
 
 impl ModuleInstance {
-    fn resolve_imports(&mut self, other_modules: &[ModuleInstance]) {
-        
+    fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) {
+        for import in &module.imports {
+            let target_module = other_modules.iter()
+                .find(|m| import.module_name == m.name)
+                .expect("Import without a matching module");
+        }
     }
 }
 
@@ -577,7 +581,7 @@ impl Interpreter {
             memory,
             globals,
         };
-        inst.resolve_imports(&self.state.module_instances);
+        inst.resolve_imports(&module, &self.state.module_instances);
         self.state.modules.insert(module.name.to_owned(), module);
         self.state.module_instances.push(inst);
         self
