@@ -287,7 +287,7 @@ struct ModuleInstance {
     table: Option<TableAddress>,
     memory: Option<MemoryAddress>,
     globals: Vec<GlobalAddress>,
-    // start: Option<FunctionAddress>,
+    start: Option<FunctionAddress>,
 }
 
 
@@ -443,6 +443,135 @@ impl Interpreter {
         }
     }
 
+
+    /// Builder function to add a loaded and validated module to the
+    /// program.
+    ///
+    /// Essentially, this does the dynamic linking, and should cause
+    /// errors to happen if there are invalid/dangling references.
+    /// So, you have to load all the modules in order of dependencies.
+    ///
+    /// We could load all the modules in arbitrary order, then validate+link
+    /// them at the end, but that's a PITA.
+    ///
+    /// This DOES run the module's start function, which potentially
+    /// takes forever, soooooo.  That may not be what we want.
+    pub fn with_module(mut self, module: ValidatedModule) -> Self {
+        let module: LoadedModule = module.into_inner();
+        let module_instance_address = ModuleAddress(self.state.module_instances.len());
+
+        // We MUST load imports first because they consume the first indices
+        // before all local definitions.
+        // "Every import defines an index in the respective index space. In each 
+        // index space, the indices of imports go before the first index of any 
+        // definition contained in the module itself."
+        
+        let types = module.types.clone();
+        let name = module.name.clone();
+        let mut inst = ModuleInstance {
+            name: name,
+            types: types,
+            exported_functions: vec![],
+            exported_tables: None,
+            exported_memories: None,
+            exported_globals: vec![],
+            functions: vec![],
+            table: None,
+            memory: None,
+            globals: vec![],
+            start: None,
+        };
+        inst.resolve_imports(&module, &self.state.module_instances);
+
+
+        for func in module.funcs.iter() {
+            let address = FunctionAddress(self.state.funcs.len());
+            let functype = module.types[func.typeidx.0].clone();
+            let instance = FuncInstance {
+                functype: functype,
+                locals: func.locals.clone(),
+                body: func.body.clone(),
+                module: module_instance_address,
+                jump_table: FuncInstance::compute_jump_table(&func.body),
+            };
+            println!("Function: {:?}", instance);
+            self.state.funcs.push(instance);
+            inst.functions.push(address);
+        }
+
+        // It's sorta meaningless to define a memory when we already
+        // import one, since we can only have one.
+        assert!(inst.memory.is_none());
+        // If the module has a memory, clone it, initialize it, shove
+        // it into the store, and return the address of it.  Otherwise,
+        // return None.
+        inst.memory = if let Some(mut memory) = module.mem.clone() {
+            memory.initialize(&module.mem_initializers)
+                .expect("Invalid memory init");
+            let mem_addr = MemoryAddress(self.store.mems.len());
+            self.store.mems.push(memory);
+            Some(mem_addr)
+        } else {
+            None
+        };
+
+
+        // Same as memory's above; meaningless to define one if we
+        // import one.
+        assert!(inst.table.is_none());
+        // Like memories, if the module has a table, clone it, initialize it, shove
+        // it into the store, and return the address of it.  Otherwise,
+        // return None.
+        inst.table = if let Some(mut table) = module.tables.clone() {
+            table.initialize(&module.table_initializers)
+                .expect("Invalid table init");
+            let table_addr = TableAddress(self.store.tables.len());
+            self.store.tables.push(table);
+            Some(table_addr)
+        } else {
+            None
+        };
+
+        // This has to be in its own block 'cause we borrow `module`
+        // and don't clone all of it.
+        inst.globals = {
+            // Create an iterator of initialized Global values
+            let initialized_globals = module.globals.iter()
+                .map(|&(ref global, ref init)| {
+                    let mut g = global.clone();
+                    g.initialize(init)
+                        .expect("TODO");
+                    g
+                });
+            
+            // Get the address of the next Global slot,
+            // shove all the initialized Global's into it,
+            // and then get the address again, and that's the
+            // mapping for our GlobalAddress's for this module.
+            let global_addr_start = self.store.globals.len();
+            self.store.globals.extend(initialized_globals);
+            let global_addr_end = self.store.globals.len();
+            (global_addr_start..global_addr_end)
+                .map(GlobalAddress)
+                .collect()
+        };
+
+        // Start function.
+        inst.start = module.start.map(|start_idx| inst.functions[start_idx.0]);
+
+        // Great, instance is created, add it to the State
+        self.state.modules.insert(module.name.to_owned(), module);
+        self.state.module_instances.push(inst);
+
+        // Run start function.
+        if let Some(function_addr) = module.start {
+            Interpreter::exec(&mut self.store, &self.state, function_addr, &[]);
+        }
+
+        self
+    }
+
+
     /// Returns a GlobalAddress from a given index
     fn resolve_global(state: &State, module_addr: ModuleAddress, idx: GlobalIdx) -> GlobalAddress {
         assert!(module_addr.0 < state.module_instances.len());
@@ -557,120 +686,6 @@ impl Interpreter {
         let mem = &mems[memory_address.0];
         assert!(offset + std::mem::size_of::<N>() < mem.data.len());
         f(&mem.data[offset..])
-    }
-
-    /// Builder function to add a loaded and validated module to the
-    /// program.
-    ///
-    /// Essentially, this does the dynamic linking, and should cause
-    /// errors to happen if there are invalid/dangling references.
-    /// So, you have to load all the modules in order of dependencies.
-    ///
-    /// We could load all the modules in arbitrary order, then validate+link
-    /// them at the end, but meh.
-    pub fn with_module(mut self, module: ValidatedModule) -> Self {
-        let module: LoadedModule = module.into_inner();
-        let module_instance_address = ModuleAddress(self.state.module_instances.len());
-
-        // We MUST load imports first because they consume the first indices
-        // before all local definitions.
-        // "Every import defines an index in the respective index space. In each 
-        // index space, the indices of imports go before the first index of any 
-        // definition contained in the module itself."
-        
-        let types = module.types.clone();
-        let name = module.name.clone();
-        let mut inst = ModuleInstance {
-            name: name,
-            types: types,
-            exported_functions: vec![],
-            exported_tables: None,
-            exported_memories: None,
-            exported_globals: vec![],
-            functions: vec![],
-            table: None,
-            memory: None,
-            globals: vec![],
-        };
-        inst.resolve_imports(&module, &self.state.module_instances);
-
-
-        for func in module.funcs.iter() {
-            let address = FunctionAddress(self.state.funcs.len());
-            let functype = module.types[func.typeidx.0].clone();
-            let instance = FuncInstance {
-                functype: functype,
-                locals: func.locals.clone(),
-                body: func.body.clone(),
-                module: module_instance_address,
-                jump_table: FuncInstance::compute_jump_table(&func.body),
-            };
-            println!("Function: {:?}", instance);
-            self.state.funcs.push(instance);
-            inst.functions.push(address);
-        }
-
-        // It's sorta meaningless to define a memory when we already
-        // import one, since we can only have one.
-        assert!(inst.memory.is_none());
-        // If the module has a memory, clone it, initialize it, shove
-        // it into the store, and return the address of it.  Otherwise,
-        // return None.
-        inst.memory = if let Some(mut memory) = module.mem.clone() {
-            memory.initialize(&module.mem_initializers)
-                .expect("Invalid memory init");
-            let mem_addr = MemoryAddress(self.store.mems.len());
-            self.store.mems.push(memory);
-            Some(mem_addr)
-        } else {
-            None
-        };
-
-
-        // Same as memory's above; meaningless to define one if we
-        // import one.
-        assert!(inst.table.is_none());
-        // Like memories, if the module has a table, clone it, initialize it, shove
-        // it into the store, and return the address of it.  Otherwise,
-        // return None.
-        inst.table = if let Some(mut table) = module.tables.clone() {
-            table.initialize(&module.table_initializers)
-                .expect("Invalid table init");
-            let table_addr = TableAddress(self.store.tables.len());
-            self.store.tables.push(table);
-            Some(table_addr)
-        } else {
-            None
-        };
-
-        // This has to be in its own block 'cause we borrow `module`
-        // and don't clone all of it.
-        inst.globals = {
-            // Create an iterator of initialized Global values
-            let initialized_globals = module.globals.iter()
-                .map(|&(ref global, ref init)| {
-                    let mut g = global.clone();
-                    g.initialize(init)
-                        .expect("TODO");
-                    g
-                });
-            
-            // Get the address of the next Global slot,
-            // shove all the initialized Global's into it,
-            // and then get the address again, and that's the
-            // mapping for our GlobalAddress's for this module.
-            let global_addr_start = self.store.globals.len();
-            self.store.globals.extend(initialized_globals);
-            let global_addr_end = self.store.globals.len();
-            (global_addr_start..global_addr_end)
-                .map(GlobalAddress)
-                .collect()
-        };
-
-        // Great, instance is created, add it to the State
-        self.state.modules.insert(module.name.to_owned(), module);
-        self.state.module_instances.push(inst);
-        self
     }
 
     fn trap() {

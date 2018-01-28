@@ -31,7 +31,7 @@ pub struct LoadedModule {
     /// Function value vector
     pub funcs: Vec<Func>,
     /// Index of start function, if any.
-    pub start: Option<usize>,
+    pub start: Option<FuncIdx>,
     /// wasm 1.0 defines only a single table,
     /// but we can import multiple of them?
     pub tables: Option<Table>,
@@ -300,7 +300,7 @@ impl LoadedModule {
                 start < m.funcs.len() + m.imported_functions.len(),
                 "Start section references a non-existent function!"
             );
-            m.start = Some(start);
+            m.start = Some(FuncIdx(start));
         }
 
         m
