@@ -443,14 +443,14 @@ impl Global {
 }
 
 #[derive(Debug, Clone)]
-pub struct Import {
+pub struct Import<T> {
     pub module_name: String,
     pub field_name: String,
-    pub value: elements::External,
+    pub value: T,
 }
 
 #[derive(Debug, Clone)]
-pub struct Export {
+pub struct Export<T> {
     pub name: String,
-    pub value: elements::Internal,
+    pub value: T,
 }

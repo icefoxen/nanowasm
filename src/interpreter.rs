@@ -275,89 +275,88 @@ impl FuncInstance {
 #[derive(Debug, Clone)]
 struct ModuleInstance {
     name: String,
-    exports: Vec<Export>,
+    // These might be somewhat redundant with the
+    // LoadedModule's
+    exported_functions: Vec<Export<FuncIdx>>,
+    exported_tables: Option<Export<()>>,
+    exported_memories: Option<Export<()>>,
+    exported_globals: Vec<Export<GlobalIdx>>,
+
     types: Vec<FuncType>,
     functions: Vec<FunctionAddress>,
     table: Option<TableAddress>,
     memory: Option<MemoryAddress>,
     globals: Vec<GlobalAddress>,
-    // TODO: Start function!
+    // start: Option<FunctionAddress>,
 }
 
-
-/// Returns whether or not the export and import have the same type.
-/// ie, both are functions, or both are memory's, etc.
-pub fn export_matches_import(export: elements::Internal, import: elements::External) -> bool {
-    match export {
-        elements::Internal::Function(_) => {
-            match import {
-                elements::External::Function(_) => true,
-                _ => false,
-            }
-        }
-        elements::Internal::Table(_) => {
-            match import {
-                elements::External::Table(_) => true,
-                _ => false,
-            }
-        }
-        elements::Internal::Memory(_) => {
-            match import {
-                elements::External::Memory(_) => true,
-                _ => false,
-            }
-        }
-        elements::Internal::Global(_) => {
-            match import {
-                elements::External::Global(_) => true,
-                _ => false,
-            }
-        }
-    }
-}
 
 impl ModuleInstance {
     fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) {
-        for import in &module.imports {
+        // Breaking imports/exports apart into separate arrays by type makes
+        // life somewhat easier; instead of having a big for loop that checks
+        // whether it exists and whether the types match, we just have to check
+        // for existence in the appropriate array.
+        // TODO: Validate the External memory/table/function/etc junk more
+        for import in &module.imported_functions {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
                 .expect("Import without a matching module");
             
-            let export = target_module.exports.iter()
+            let export = target_module.exported_functions.iter()
                 .find(|e| e.name == import.field_name)
-                .expect("Cannot find export in module matching import!");
+                .expect("Cannot find exported function in module matching import!");
+            
+            let addr = target_module.functions[export.value.0];
+            self.functions.push(addr);
+        }
 
-            if !export_matches_import(export.value, import.value) {
-                panic!("Export and import are different types!");
-            }
+        for import in &module.imported_tables {
+            let target_module = other_modules.iter()
+                .find(|m| import.module_name == m.name)
+                .expect("Import without a matching module");
+            
+            let export = target_module.exported_tables.iter()
+                .find(|e| e.name == import.field_name)
+                .expect("Cannot find exported function in module matching import!");
 
-            // TODO: Validate the External memory/table/function/etc crap more
+            // TODO: The "unwrap" here and for Memory 
+            // forms our ghetto error-checking;
+            // since we can only have one memory or table,
+            // the index is irrelevant.
+            let addr = target_module.table.unwrap();
+            self.table = Some(addr);
+        }
 
-            // Okay, now that we've validated everything, we actually
-            // resolve the indices of the import to addresses and add
-            // them to the local module's namespace.
-            match export.value {
-                elements::Internal::Function(i) => {
-                    let addr = target_module.functions[i as usize];
-                    self.functions.push(addr);
-                }
-                elements::Internal::Table(_i) => {
-                    // TODO: The "unwrap" here and for Memory 
-                    // forms our ghetto error-checking;
-                    // since we can only have one memory or table,
-                    // the index is irrelevant.
-                    let addr = target_module.table.unwrap();
-                    self.table = Some(addr);
-                }
-                elements::Internal::Memory(_i) => {
-                    let addr = target_module.memory.unwrap();
-                    self.memory = Some(addr);
-                }
-                elements::Internal::Global(i) => {
-                    let addr = target_module.globals[i as usize];
-                    self.globals.push(addr);
-                }
-            }
+
+        for import in &module.imported_memories {
+            let target_module = other_modules.iter()
+                .find(|m| import.module_name == m.name)
+                .expect("Import without a matching module");
+            
+            let export = target_module.exported_memories.iter()
+                .find(|e| e.name == import.field_name)
+                .expect("Cannot find exported function in module matching import!");
+
+            // TODO: The "unwrap" here and for Memory 
+            // forms our ghetto error-checking;
+            // since we can only have one memory or table,
+            // the index is irrelevant.
+            let addr = target_module.memory.unwrap();
+            self.memory = Some(addr);
+        }
+
+        for import in &module.imported_globals {
+            let target_module = other_modules.iter()
+                .find(|m| import.module_name == m.name)
+                .expect("Import without a matching module");
+            
+            let export = target_module.exported_globals.iter()
+                .find(|e| e.name == import.field_name)
+                .expect("Cannot find exported function in module matching import!");
+            
+            let addr = target_module.globals[export.value.0];
+            self.globals.push(addr);
         }
     }
 }
@@ -581,11 +580,13 @@ impl Interpreter {
         
         let types = module.types.clone();
         let name = module.name.clone();
-        let exports = module.exports.clone();
         let mut inst = ModuleInstance {
-            name,
-            exports,
-            types,
+            name: name,
+            types: types,
+            exported_functions: vec![],
+            exported_tables: None,
+            exported_memories: None,
+            exported_globals: vec![],
             functions: vec![],
             table: None,
             memory: None,
