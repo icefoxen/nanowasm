@@ -482,7 +482,7 @@ impl Interpreter {
     /// This DOES run the module's start function, which potentially
     /// takes forever, soooooo.  That may not be what we want.
     /// However it IS what the spec proscribes, so!
-    pub fn with_module(mut self, module: ValidatedModule) -> Self {
+    pub fn with_module(mut self, module: ValidatedModule) -> Result<Self, Error> {
         let module: LoadedModule = module.into_inner();
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
 
@@ -507,7 +507,7 @@ impl Interpreter {
             globals: vec![],
             start: None,
         };
-        inst.resolve_imports(&module, &self.state.module_instances);
+        inst.resolve_imports(&module, &self.state.module_instances)?;
 
 
         for func in module.funcs.iter() {
@@ -596,7 +596,7 @@ impl Interpreter {
             Interpreter::exec(&mut self.store, &self.state, function_addr, &[]);
         }
 
-        self
+        Ok(self)
     }
 
 

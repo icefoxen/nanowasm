@@ -143,7 +143,8 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
 
                 let loaded_module = LoadedModule::new("fib", module);
                 let validated_module = loaded_module.validate();
-                let mut _interp = Interpreter::new().with_module(validated_module);
+                let mut _interp = Interpreter::new().with_module(validated_module)
+                    .expect("Could not initialize module for test");
 
                 print!("Instantiated ");
                 println!("Ok.");
@@ -209,9 +210,10 @@ fn main() {
             .expect("Spec test failed");
     } else {
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let loaded_module = LoadedModule::new("fib", module);
+        let loaded_module = LoadedModule::new(input_file, module);
         let validated_module = loaded_module.validate();
-        let mut interp = Interpreter::new().with_module(validated_module);
+        let mut interp = Interpreter::new().with_module(validated_module)
+            .expect("Could not initialize module");
         
         let start_addr = FunctionAddress::new(1);
         interp.run(start_addr, &vec![Value::I32(30)]);
