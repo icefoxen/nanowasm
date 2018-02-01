@@ -4,6 +4,10 @@
 extern crate byteorder;
 extern crate num;
 extern crate parity_wasm;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate failure;
 
 #[cfg(test)]
 mod tests;

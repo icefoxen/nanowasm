@@ -443,15 +443,31 @@ impl Global {
 }
 
 #[derive(Debug, Clone)]
-pub struct Import {
+pub struct Import<T> {
     pub module_name: String,
     pub field_name: String,
-    pub value: elements::External,
+    pub value: T,
 }
 
 #[derive(Debug, Clone)]
-pub struct Export {
+pub struct Export<T> {
     pub name: String,
-    pub value: elements::Internal,
+    pub value: T,
 }
 
+
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "Module {} does not exist, desired by module {}!", module, dependent_module)]
+    ModuleNotFound {
+        module: String,
+        dependent_module: String,
+    },
+    #[fail(display = "Module {} does not export value {} of expected type {} imported by module {}", module, name, typ, dependent_module)]
+    NotExported {
+        module: String,
+        name: String,
+        typ: String,
+        dependent_module: String,
+    },
+}

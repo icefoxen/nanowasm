@@ -31,7 +31,7 @@ pub struct LoadedModule {
     /// Function value vector
     pub funcs: Vec<Func>,
     /// Index of start function, if any.
-    pub start: Option<usize>,
+    pub start: Option<FuncIdx>,
     /// wasm 1.0 defines only a single table,
     /// but we can import multiple of them?
     pub tables: Option<Table>,
@@ -44,9 +44,15 @@ pub struct LoadedModule {
     pub mem_initializers: Vec<(ConstExpr, Vec<u8>)>,
     pub globals: Vec<(Global, ConstExpr)>,
     /// Exported values
-    pub exports: Vec<Export>,
+    pub exported_functions: Vec<Export<FuncIdx>>,
+    pub exported_tables: Option<Export<()>>,
+    pub exported_memories: Option<Export<()>>,
+    pub exported_globals: Vec<Export<GlobalIdx>>,
     /// Imported values
-    pub imports: Vec<Import>,
+    pub imported_functions: Vec<Import<FuncIdx>>,
+    pub imported_tables: Option<Import<elements::TableType>>,
+    pub imported_memories: Option<Import<elements::MemoryType>>,
+    pub imported_globals: Vec<Import<elements::GlobalType>>,
 }
 
 /// A wrapper type that assures at compile-time that
@@ -82,8 +88,14 @@ impl LoadedModule {
             mem_initializers: vec![],
             globals: vec![],
 
-            imports: vec![],
-            exports: vec![],
+            imported_functions: vec![],
+            imported_tables: None,
+            imported_memories: None,
+            imported_globals: vec![],
+            exported_functions: vec![],
+            exported_tables: None,
+            exported_memories: None,
+            exported_globals: vec![]
         };
 
         // Allocate types
@@ -211,34 +223,84 @@ impl LoadedModule {
         // Load imports
         if let Some(imports) = module.import_section() {
             for entry in imports.entries() {
-                let i = Import {
-                    module_name: entry.module().to_owned(),
-                    field_name: entry.field().to_owned(),
-                    value: entry.external().clone(),
-                };
-                m.imports.push(i);
+                let module_name = entry.module().to_owned();
+                let field_name = entry.field().to_owned();
+                match *entry.external() {
+                    elements::External::Function(i) => {
+                        m.imported_functions.push(Import {
+                            module_name,
+                            field_name,
+                            value: FuncIdx(i as usize)
+                        });
+                    },
+                    elements::External::Table(i) => {
+                        m.imported_tables = Some(Import {
+                            module_name,
+                            field_name,
+                            value: i
+                        });
+                    },
+                    elements::External::Memory(i) => {
+                        m.imported_memories = Some(Import {
+                            module_name,
+                            field_name,
+                            value: i
+                        });
+                    }
+                    elements::External::Global(i) => {
+                        m.imported_globals.push(Import {
+                            module_name,
+                            field_name,
+                            value: i
+                        });
+                    }
+                }
             }
         }
 
         // Load exports
         if let Some(exports) = module.export_section() {
             for entry in exports.entries() {
-                let e = Export {
-                    name: entry.field().to_owned(),
-                    value: entry.internal().clone(),
-                };
-                m.exports.push(e);
+                let name = entry.field().to_owned();
+                match *entry.internal() {
+                    elements::Internal::Function(i) => {
+                        m.exported_functions.push( Export {
+                            name,
+                            value: FuncIdx(i as usize)
+                        })
+                    },
+                    elements::Internal::Table(i) => {
+                        m.exported_tables = Some( Export {
+                            name,
+                            value: ()
+                        })
+                    },
+                    elements::Internal::Memory(i) => {
+                        m.exported_memories = Some( Export {
+                            name,
+                            value: ()
+                        })
+                    },
+                    elements::Internal::Global(i) => {
+                        m.exported_globals.push( Export {
+                            name,
+                            value: GlobalIdx(i as usize)
+                        })
+                    },
+                }
             }
         }
 
         // Check for start section
         if let Some(start) = module.start_section() {
             let start = start as usize;
+            // This is sorta annoying since we may have imports
+            // that 
             assert!(
-                start < m.funcs.len(),
+                start < m.funcs.len() + m.imported_functions.len(),
                 "Start section references a non-existent function!"
             );
-            m.start = Some(start);
+            m.start = Some(FuncIdx(start));
         }
 
         m

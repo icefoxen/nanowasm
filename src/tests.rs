@@ -1,26 +1,30 @@
 use parity_wasm;
 use parity_wasm::builder;
-use parity_wasm::elements::{self, Opcode};
+use parity_wasm::elements::{self, Opcode, Module};
 use types::*;
 use loader::*;
 use interpreter::*;
 
-/// Make sure that adding a non-validated module to a program fails.
-#[test]
-#[should_panic]
-fn test_validate_failure() {
-    let input_file = "test_programs/inc.wasm";
-    let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let loaded_module = LoadedModule::new("inc", module);
-    let validated_module = loaded_module.validate();
-    let _interp = Interpreter::new().with_module(validated_module);
+extern crate wabt;
+
+macro_rules! load_module {
+    ($name: expr) => ({
+        let input_wat = include_str!($name);
+        let module_bytes = wabt::wat2wasm(input_wat).unwrap();
+        let module = parity_wasm::deserialize_buffer(&module_bytes).unwrap();
+        module
+    })
 }
+
+lazy_static! {
+    static ref INC: Module = load_module!("../test_programs/inc.wat");
+    static ref FIB: Module = load_module!("../test_programs/fib.wat");
+}
+
 
 #[test]
 fn test_create() {
-    let input_file = "test_programs/inc.wasm";
-    let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let loaded_module = LoadedModule::new("inc", module);
+    let loaded_module = LoadedModule::new("inc", INC.clone());
     let validated_module = loaded_module.validate();
     let mut interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
@@ -29,9 +33,7 @@ fn test_create() {
 
 #[test]
 fn test_create_fib() {
-    let input_file = "test_programs/fib.wasm";
-    let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mut loaded_module = LoadedModule::new("fib", module);
+    let mut loaded_module = LoadedModule::new("fib", FIB.clone());
     let validated_module = loaded_module.validate();
     let interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
@@ -40,9 +42,7 @@ fn test_create_fib() {
 
 #[test]
 fn test_run_fib() {
-    let input_file = "test_programs/fib.wasm";
-    let module = parity_wasm::deserialize_file(input_file).unwrap();
-    let mut loaded_module = LoadedModule::new("fib", module);
+    let mut loaded_module = LoadedModule::new("fib", FIB.clone());
     let validated_module = loaded_module.validate();
     let mut interp = Interpreter::new().with_module(validated_module);
 
