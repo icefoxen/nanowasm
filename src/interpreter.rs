@@ -292,20 +292,43 @@ struct ModuleInstance {
 
 
 impl ModuleInstance {
-    fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) {
+    /// Takes a loaded-but-not-instantiated module and a slice of other modules
+    /// loaded before it, and checks to see whether the module's imports are
+    /// all provided by other modules.
+    fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) -> Result<(), Error> {
         // Breaking imports/exports apart into separate arrays by type makes
         // life somewhat easier; instead of having a big for loop that checks
         // whether it exists and whether the types match, we just have to check
         // for existence in the appropriate array.
         // TODO: Validate the External memory/table/function/etc junk more
+
+        macro_rules! returning_closures_sucks_rancid_donkey_dong {
+            ($import: expr, $module: expr) => {
+                || Error::ModuleNotFound { 
+                    module: $import.module_name.clone(),
+                    dependent_module: $module.name.clone()
+                }
+            }
+        }
+
+        macro_rules! generate_type_mismatch_error {
+            ($name: expr, $import: expr, $dependent_module: expr, $typ: expr) => {
+                || Error::NotExported { 
+                    name: $name.clone(),
+                    module: $import.clone(),
+                    dependent_module: $dependent_module.to_owned(),
+                    typ: $typ.clone(),
+                }
+            }
+        }
         for import in &module.imported_functions {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
-                .expect("Import without a matching module");
+                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
             
             let export = target_module.exported_functions.iter()
                 .find(|e| e.name == import.field_name)
-                .expect("Cannot find exported function in module matching import!");
+                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "function", module.name))?;
             
             let addr = target_module.functions[export.value.0];
             self.functions.push(addr);
@@ -314,11 +337,11 @@ impl ModuleInstance {
         for import in &module.imported_tables {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
-                .expect("Import without a matching module");
+                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
             
             let export = target_module.exported_tables.iter()
                 .find(|e| e.name == import.field_name)
-                .expect("Cannot find exported function in module matching import!");
+                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "table", module.name))?;
 
             // TODO: The "unwrap" here and for Memory 
             // forms our ghetto error-checking;
@@ -332,11 +355,11 @@ impl ModuleInstance {
         for import in &module.imported_memories {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
-                .expect("Import without a matching module");
+                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
             
             let export = target_module.exported_memories.iter()
                 .find(|e| e.name == import.field_name)
-                .expect("Cannot find exported function in module matching import!");
+                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "memory", module.name))?;
 
             // TODO: The "unwrap" here and for Memory 
             // forms our ghetto error-checking;
@@ -349,15 +372,17 @@ impl ModuleInstance {
         for import in &module.imported_globals {
             let target_module = other_modules.iter()
                 .find(|m| import.module_name == m.name)
-                .expect("Import without a matching module");
+                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
             
             let export = target_module.exported_globals.iter()
                 .find(|e| e.name == import.field_name)
-                .expect("Cannot find exported function in module matching import!");
+                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "global", module.name))?;
             
             let addr = target_module.globals[export.value.0];
             self.globals.push(addr);
         }
+
+        Ok(())
     }
 }
 
@@ -1697,5 +1722,12 @@ impl Interpreter {
         let state = &self.state;
         let store = &mut self.store;
         Interpreter::exec(store, state, func, args)
+    }
+
+    /// Looks up a function with the given name 
+    /// and executes it with the given arguments.
+    /// Returns the function's return value, if any.
+    pub fn run_export(&mut self, func_name: &str, module_name: &str, args: &[Value]) -> Result<Option<Value>, Error> {
+        unimplemented!()
     }
 }
