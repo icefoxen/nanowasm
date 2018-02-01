@@ -35,7 +35,7 @@ build that.
 sudo apt install clang cmake
 git clone --recursive https://github.com/icefoxen/nanowasm
 # Or if you've already checked out nanowasm, cd into it and run:
-# git submodule init --recursive --remote
+# git submodule update --init --recursive
 cd nanowasm/spec/wabt
 make -j$(nproc)
 ```

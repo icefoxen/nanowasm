@@ -5,6 +5,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate wabt;
 
 use std::env;
 use std::fs::File;
@@ -175,8 +176,10 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
 
 
 fn main() {
-    println!("Args are: {:?}", env::args());
-
+    use wabt::wat2wasm;
+    let wasm_test = include_str!("../../spec/wasm_testsuite/start.wast");
+    wat2wasm(wasm_test).unwrap();
+    
     // Parse inputs
     let matches = App::new("nanowasm")
         .version("0.1")
