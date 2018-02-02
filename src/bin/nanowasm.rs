@@ -142,7 +142,7 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 current_module = Some(module.clone());
                 print!("Loaded ");
 
-                let loaded_module = LoadedModule::new("fib", module);
+                let loaded_module = LoadedModule::new(filename, module).unwrap();
                 let validated_module = loaded_module.validate();
                 let mut _interp = Interpreter::new().with_module(validated_module)
                     .expect("Could not initialize module for test");
@@ -151,23 +151,34 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 println!("Ok.");
 
             },
-            Command::AssertReturn { .. } => (),
-            Command::AssertReturnCanonicalNan { .. } => (),
-            Command::AssertReturnArithmeticNan { .. } => (),
-            Command::AssertTrap { .. } => (),
-            Command::AssertInvalid { ref filename, .. } => {
-                //let mut file_path: path::PathBuf = file_dir.into();
-                //file_path.push(filename);
-                //let module = parity_wasm::deserialize_file(&file_path).unwrap();
-                //println!("Module should be invalid: {:#?}", module)
-                println!("TODO: Need to instantiate/validate the module before we can test this assertion");
+            Command::AssertInvalid { ref filename, ref text, line: _line } => {
+                let mut file_path: path::PathBuf = file_dir.into();
+                file_path.push(filename);
+                let module = parity_wasm::deserialize_file(&file_path).unwrap();                    
+                match LoadedModule::new(filename, module) {
+                    Ok(loaded_module) => {
+                        let validated_module = loaded_module.validate();
+                    },
+                    Err(Error::Invalid{ref reason, ..}) => {
+                        assert!(reason.contains(text), "Expected an ErrorInvalid with text '{}', instead got {}", text, reason);
+                    },
+                    Err(e) => {
+                        panic!("AssertInvalid: Should have gotten an Error::Invalid, instead got: {:?}", e);
+                    }
+                }
+
+
             },
+            Command::AssertUninstantiable { .. } | 
+            Command::AssertExhaustion { .. } |
+            Command::AssertUnlinkable { .. } |
+            Command::AssertReturn { .. } |
+            Command::AssertReturnCanonicalNan { .. } |
+            Command::AssertReturnArithmeticNan { .. } |
+            Command::AssertTrap { .. } | 
             Command::AssertMalformed { .. } => {
-                println!("TODO: Need to instantiate/validate the module before we can test this assertion");
+                println!("TODO: Need to test this assertion case: {:?}", c);
             },
-            Command::AssertUninstantiable { .. } => (),
-            Command::AssertExhaustion { .. } => (),
-            Command::AssertUnlinkable { .. } => (),
             Command::Register { .. } => (),
             Command::Action { .. } => (),
         }
@@ -177,10 +188,6 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
 
 
 fn main() {
-    use wabt::wat2wasm;
-    let wasm_test = include_str!("../../spec/wasm_testsuite/start.wast");
-    wat2wasm(wasm_test).unwrap();
-    
     // Parse inputs
     let matches = App::new("nanowasm")
         .version("0.1")
@@ -213,7 +220,7 @@ fn main() {
             .expect("Spec test failed");
     } else {
         let module = parity_wasm::deserialize_file(input_file).unwrap();
-        let loaded_module = LoadedModule::new(input_file, module);
+        let loaded_module = LoadedModule::new(input_file, module).unwrap();
         let validated_module = loaded_module.validate();
         let mut interp = Interpreter::new().with_module(validated_module)
             .expect("Could not initialize module");

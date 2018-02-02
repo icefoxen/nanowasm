@@ -73,7 +73,7 @@ impl LoadedModule {
     /// binary format to a representation more convenient to be loaded.
     ///
     /// Does NOT validate the module or run the start function though!
-    pub fn new(name: &str, module: elements::Module) -> Self {
+    pub fn new(name: &str, module: elements::Module) -> Result<Self, Error> {
         assert_eq!(module.version(), 1);
 
         let mut m = Self {
@@ -295,16 +295,18 @@ impl LoadedModule {
         //println!("Module start section: {:?}", module.start_section());
         if let Some(start) = module.start_section() {
             let start = start as usize;
-            // This is sorta annoying since we may have imports
-            // that 
-            assert!(
-                start < m.funcs.len() + m.imported_functions.len(),
-                "Start section references a non-existent function!"
-            );
+            // Ensure start function is in bounds.
+            if start < m.funcs.len() + m.imported_functions.len() {
+                let e = Error::Invalid {
+                    module: name.to_owned(),
+                    reason: "Unknown start function!".to_owned(),
+                };
+                return Err(e);
+            }
             m.start = Some(FuncIdx(start));
         }
 
-        m
+        Ok(m)
     }
 
     /// Validates the module: makes sure types are correct,

@@ -458,11 +458,13 @@ pub struct Export<T> {
 
 #[derive(Debug, Fail)]
 pub enum Error {
+    /// Tried to import a module that does not exist.
     #[fail(display = "Module {} does not exist, desired by module {}!", module, dependent_module)]
     ModuleNotFound {
         module: String,
         dependent_module: String,
     },
+    /// Tried to import a value but the module does not export it.
     #[fail(display = "Module {} does not export value {} of expected type {} imported by module {}", module, name, typ, dependent_module)]
     NotExported {
         module: String,
@@ -470,4 +472,10 @@ pub enum Error {
         typ: String,
         dependent_module: String,
     },
+    /// Validation failed, for whatever reason.
+    #[fail(display = "Module {} is invalid: {}", module, reason)]
+    Invalid {
+        module: String,
+        reason: String,
+    }
 }
