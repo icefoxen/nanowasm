@@ -157,10 +157,14 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 let module = parity_wasm::deserialize_file(&file_path).unwrap();                    
                 match LoadedModule::new(filename, module) {
                     Ok(loaded_module) => {
-                        let validated_module = loaded_module.validate();
+                        panic!("AssertInvalid: should have gotten Error::Invalid, instead got Ok")
                     },
                     Err(Error::Invalid{ref reason, ..}) => {
-                        assert!(reason.contains(text), "Expected an ErrorInvalid with text '{}', instead got {}", text, reason);
+                        if reason.contains(text) {
+                            ();
+                        } else {
+                            panic!("Expected an ErrorInvalid in file {} with text '{}', instead got {}", filename, text, reason);
+                        }
                     },
                     Err(e) => {
                         panic!("AssertInvalid: Should have gotten an Error::Invalid, instead got: {:?}", e);

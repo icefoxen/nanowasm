@@ -296,13 +296,33 @@ impl LoadedModule {
         if let Some(start) = module.start_section() {
             let start = start as usize;
             // Ensure start function is in bounds.
-            if start < m.funcs.len() + m.imported_functions.len() {
+            let max_start_idx = m.funcs.len() + m.imported_functions.len();
+            if start >= max_start_idx {
+                let message = format!("unknown function for start: {}, max start index: {}",
+                                      start, max_start_idx);
                 let e = Error::Invalid {
                     module: name.to_owned(),
-                    reason: "Unknown start function!".to_owned(),
+                    reason: message,
                 };
                 return Err(e);
             }
+
+            // Ensure start function signature is correct.
+            let startfunc = &m.funcs[start];
+            let startfunc_type = &m.types[startfunc.typeidx.0];
+            let valid_startfunc_type = &FuncType {
+                params: vec![],
+                return_type: None,
+            };
+            if startfunc_type != valid_startfunc_type {
+                let message = format!("Invalid start function type type: {:?}, should take nothing and return nothing", startfunc_type);
+                let e = Error::Invalid {
+                    module: name.to_owned(),
+                    reason: message,
+                };
+                return Err(e);
+            }
+            
             m.start = Some(FuncIdx(start));
         }
 
