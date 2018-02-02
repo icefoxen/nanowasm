@@ -30,7 +30,8 @@ impl StackFrame {
     /// the given args to its locals.
     fn from_func_instance(func: &FuncInstance, args: &[Value]) -> Self {
         // Allocate space for locals+params
-        let mut locals = Vec::with_capacity(func.locals.len() + func.functype.params.len());
+        let locals_size = func.locals.len() + func.functype.params.len();
+        let mut locals = Vec::with_capacity(locals_size);
         assert_eq!(func.functype.params.len(), args.len(), "Tried to create stack frame for func with different number of parameters than the type says it takes!");
 
         // Push params
@@ -584,6 +585,7 @@ impl Interpreter {
 
         // Start function.
         inst.start = module.start.map(|start_idx| inst.functions[start_idx.0]);
+        //println!("Instance start function: {:?}, module start function: {:?}", inst.start, module.start);
         // Save it for later too.
         let start_function = inst.start;
 
@@ -900,6 +902,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Value> {
         let func = &state.funcs[func.0];
+        println!("Params: {:?}, args: {:?}", func.functype.params, args);
         let frame = &mut StackFrame::from_func_instance(func, args);
         use parity_wasm::elements::Opcode::*;
         use std::usize;

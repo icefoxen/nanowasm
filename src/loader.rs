@@ -292,6 +292,7 @@ impl LoadedModule {
         }
 
         // Check for start section
+        //println!("Module start section: {:?}", module.start_section());
         if let Some(start) = module.start_section() {
             let start = start as usize;
             // This is sorta annoying since we may have imports

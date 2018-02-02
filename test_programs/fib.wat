@@ -5,7 +5,7 @@
   (start $start)
   (func $start (type $in0out0)
      i32.const 30
-     call $fib
+     ;;call $fib
      drop
   )
 

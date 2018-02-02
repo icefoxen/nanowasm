@@ -44,7 +44,8 @@ fn test_create_fib() {
 fn test_run_fib() {
     let mut loaded_module = LoadedModule::new("fib", FIB.clone());
     let validated_module = loaded_module.validate();
-    let mut interp = Interpreter::new().with_module(validated_module);
+    let mut interp = Interpreter::new().with_module(validated_module)
+        .unwrap();
 
     interp.run(FunctionAddress(1), &vec![Value::I32(30)]);
     assert!(false);
@@ -52,10 +53,12 @@ fn test_run_fib() {
 
 /// Helper function to run a small program with some
 /// inputs and compare the results to the given desired outputs.
-/// Constraints: Makes a single function with a single output,
+/// Constraints: Makes a single function named "testfunc" with a single output,
 /// no locals or memories or such...
 fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option<Value>) {
     let input_types = args.iter().map(|v| v.get_type()).collect::<Vec<_>>();
+    println!("Input types: {:?}", input_types);
+    println!("Args: {:?}", args);
     let output_type = desired_output.map(|v| v.get_type());
     // Args get put into local variables, not the stack, so for convenience
     // we load them onto the stack for you.
@@ -66,7 +69,6 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
     init_ops.extend(program.iter().cloned());
     let module = builder::ModuleBuilder::new()
         .function()
-        .main()
         .signature()
         .with_params(input_types)
         .with_return_type(output_type)
@@ -78,7 +80,8 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
         .build();
     let mut loaded = LoadedModule::new("test", module);
     let validated_module = loaded.validate();
-    let mut interp = Interpreter::new().with_module(validated_module);
+    let mut interp = Interpreter::new().with_module(validated_module)
+        .unwrap();
     let run_result = interp.run(FunctionAddress(0), args);
     assert_eq!(run_result, desired_output)
 }
