@@ -385,6 +385,11 @@ impl ModuleInstance {
             self.globals.push(addr);
         }
 
+        self.exported_functions = module.exported_functions.clone();
+        self.exported_tables = module.exported_tables.clone();
+        self.exported_memories = module.exported_memories.clone();
+        self.exported_globals = module.exported_globals.clone();
+
         Ok(())
     }
 }
@@ -1742,7 +1747,28 @@ impl Interpreter {
     /// Looks up a function with the given name 
     /// and executes it with the given arguments.
     /// Returns the function's return value, if any.
-    pub fn run_export(&mut self, func_name: &str, module_name: &str, args: &[Value]) -> Result<Option<Value>, Error> {
-        unimplemented!()
+    pub fn run_export(&mut self, module_name: &str, func_name: &str, args: &[Value]) -> Result<Option<Value>, Error> {
+        let function_addr = {
+            // TODO: Probably some duplication with ModuleInstance::resolve_imports()
+            // but argh.
+            let target_module = self.state.module_instances.iter()
+                .find(|m| module_name == m.name)
+                .ok_or(Error::ModuleNotFound {
+                    module: module_name.to_owned(),
+                    dependent_module: "<Interpreter::run_export()>".to_owned(),
+                })?;
+            //println!("target module: {:#?}", target_module);
+            let function_idx = target_module.exported_functions.iter()
+                .find(|funcs| {println!("Searching for {}, got {}", func_name, funcs.name); funcs.name == func_name})
+                .ok_or(Error::NotExported {
+                    module: module_name.to_owned(),
+                    name: func_name.to_owned(),
+                    typ: "function".to_owned(),
+                    dependent_module: "<Interpreter::run_export()>".to_owned(),
+                })?;
+            target_module.functions[function_idx.value.0]
+        };
+        Ok(self.run(function_addr, args))
+
     }
 }

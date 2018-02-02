@@ -7,7 +7,6 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate wabt;
 
-use std::env;
 use std::fs::File;
 use std::path;
 
@@ -24,6 +23,19 @@ pub struct RuntimeValue {
     #[serde(rename = "type")]
     pub value_type: String,
     pub value: String,
+}
+
+impl<'a> From<&'a RuntimeValue> for Value {
+    fn from(rv: &'a RuntimeValue) -> Self {
+        match rv.value_type.as_ref() {
+            "i32" => Value::I32(rv.value.parse().unwrap()),
+            "i64" => Value::I64(rv.value.parse().unwrap()),
+            "f32" => Value::F32(rv.value.parse().unwrap()),
+            "f64" => Value::F64(rv.value.parse().unwrap()),
+            _ => panic!("Could not convert RuntimeValue into nanowasm::types::Value")
+        }
+        
+    }
 }
 
 
@@ -139,11 +151,11 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 // TODO: Make it return errors properly.
                 let module = parity_wasm::deserialize_file(&file_path)
                     .unwrap();
-                current_module = Some(module.clone());
                 print!("Loaded ");
 
                 let loaded_module = LoadedModule::new(filename, module).unwrap();
                 let validated_module = loaded_module.validate();
+                current_module = Some(validated_module.clone());
                 let mut _interp = Interpreter::new().with_module(validated_module)
                     .expect("Could not initialize module for test");
 
@@ -173,10 +185,28 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
 
 
             },
+            Command::AssertReturn { ref action, ref expected, .. }  => {
+                match *action {
+                    Action::Invoke { ref field, ref args, .. } => {
+                        //println!("Invoking {:?}, {:?}", field, args);
+                        let module = current_module.clone().expect("Tried to AssertReturn with no module loaded");
+                        // Need to_owned() here 'cause we move `module` into `interp` next.
+                        let module_name = &module.borrow_inner().name.to_owned();
+                        let mut interp = Interpreter::new().with_module(module)
+                            .expect("Could not initialize module for test");
+                        let arg_values = args.iter().map(From::from).collect::<Vec<_>>();
+                        let res = interp.run_export(module_name, field, &arg_values)
+                            .expect("AssertReturn did not run successfully!");
+                        let return_values = res.into_iter().collect::<Vec<Value>>();
+                        let expected_return_values = expected.iter().map(From::from).collect::<Vec<Value>>();
+                        assert_eq!(return_values, expected_return_values);
+                    }
+                    _ => unimplemented!(),
+                }
+            },
             Command::AssertUninstantiable { .. } | 
             Command::AssertExhaustion { .. } |
             Command::AssertUnlinkable { .. } |
-            Command::AssertReturn { .. } |
             Command::AssertReturnCanonicalNan { .. } |
             Command::AssertReturnArithmeticNan { .. } |
             Command::AssertTrap { .. } | 

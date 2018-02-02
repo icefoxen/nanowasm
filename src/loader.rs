@@ -65,6 +65,12 @@ impl ValidatedModule {
     pub(crate) fn into_inner(self) -> LoadedModule {
         self.0
     }
+
+    /// Borrows the actual `LoadedModule` from the `ValidatedModule`
+    pub fn borrow_inner(&self) -> &LoadedModule {
+        &self.0
+    }
+
 }
 
 impl LoadedModule {
