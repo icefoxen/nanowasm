@@ -308,6 +308,13 @@ impl LoadedModule {
             }
 
             // Ensure start function signature is correct.
+            // Remember, the indices of imported functions go before
+            // the indices of locally defined functions.
+            //let startfunc = if start < m.imported_functions.len() {
+            //    m.imported_functions
+            //} else {
+            //    &m.funcs[start];
+            //};
             let startfunc = &m.funcs[start];
             let startfunc_type = &m.types[startfunc.typeidx.0];
             let valid_startfunc_type = &FuncType {
@@ -315,7 +322,7 @@ impl LoadedModule {
                 return_type: None,
             };
             if startfunc_type != valid_startfunc_type {
-                let message = format!("Invalid start function type type: {:?}, should take nothing and return nothing", startfunc_type);
+                let message = format!("Invalid start function type: {:?}, should take nothing and return nothing", startfunc_type);
                 let e = Error::Invalid {
                     module: name.to_owned(),
                     reason: message,

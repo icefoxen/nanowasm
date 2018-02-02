@@ -873,12 +873,17 @@ impl Interpreter {
         let f = &state.funcs[function_addr.0];
         let return_val = {
             assert!(f.functype.params.len() <= frame.value_stack.len());
-            let params_end = frame.value_stack.len() - 1;
-            let params_start = params_end - f.functype.params.len();
-            let params_slice = &frame.value_stack[params_start..params_end];
-            for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
-                assert_eq!(param.get_type(), *desired_type);
-            }
+            let params_slice = if f.functype.params.len() == 0 {
+                &[]
+            } else {
+                let params_end = frame.value_stack.len();
+                let params_start = params_end - f.functype.params.len();
+                let params_slice = &frame.value_stack[params_start..params_end];
+                for (param, desired_type) in params_slice.iter().zip(&f.functype.params) {
+                    assert_eq!(param.get_type(), *desired_type);
+                }
+                params_slice
+            };
             // Some(Value::I32(3))
             Interpreter::exec(store, state, function_addr, params_slice)
         };
