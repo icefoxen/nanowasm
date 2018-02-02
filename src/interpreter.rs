@@ -312,7 +312,7 @@ impl ModuleInstance {
             }
         }
 
-        macro_rules! generate_type_mismatch_error {
+        macro_rules! generate_not_exported_error {
             ($name: expr, $import: expr, $dependent_module: expr, $typ: expr) => {
                 || Error::NotExported { 
                     name: $name.clone(),
@@ -327,11 +327,13 @@ impl ModuleInstance {
                 .find(|m| import.module_name == m.name)
                 .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
             
-            let export = target_module.exported_functions.iter()
-                .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "function", module.name))?;
+            let export_idx = target_module.exported_functions.iter()
+                .position(|e| e.name == import.field_name)
+                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "function", module.name))?;
+
+            // TODO: Assert that the import and export types match
             
-            let addr = target_module.functions[export.value.0];
+            let addr = target_module.functions[export_idx];
             self.functions.push(addr);
         }
 
@@ -342,7 +344,7 @@ impl ModuleInstance {
             
             let export = target_module.exported_tables.iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "table", module.name))?;
+                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "table", module.name))?;
 
             // TODO: The "unwrap" here and for Memory 
             // forms our ghetto error-checking;
@@ -360,7 +362,7 @@ impl ModuleInstance {
             
             let export = target_module.exported_memories.iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "memory", module.name))?;
+                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "memory", module.name))?;
 
             // TODO: The "unwrap" here and for Memory 
             // forms our ghetto error-checking;
@@ -377,7 +379,7 @@ impl ModuleInstance {
             
             let export = target_module.exported_globals.iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_type_mismatch_error!(target_module.name, import.field_name, "global", module.name))?;
+                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "global", module.name))?;
             
             let addr = target_module.globals[export.value.0];
             self.globals.push(addr);

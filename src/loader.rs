@@ -49,7 +49,7 @@ pub struct LoadedModule {
     pub exported_memories: Option<Export<()>>,
     pub exported_globals: Vec<Export<GlobalIdx>>,
     /// Imported values
-    pub imported_functions: Vec<Import<FuncIdx>>,
+    pub imported_functions: Vec<Import<TypeIdx>>,
     pub imported_tables: Option<Import<elements::TableType>>,
     pub imported_memories: Option<Import<elements::MemoryType>>,
     pub imported_globals: Vec<Import<elements::GlobalType>>,
@@ -230,7 +230,7 @@ impl LoadedModule {
                         m.imported_functions.push(Import {
                             module_name,
                             field_name,
-                            value: FuncIdx(i as usize)
+                            value: TypeIdx(i as usize)
                         });
                     },
                     elements::External::Table(i) => {
@@ -309,14 +309,16 @@ impl LoadedModule {
 
             // Ensure start function signature is correct.
             // Remember, the indices of imported functions go before
-            // the indices of locally defined functions.
-            //let startfunc = if start < m.imported_functions.len() {
-            //    m.imported_functions
-            //} else {
-            //    &m.funcs[start];
-            //};
-            let startfunc = &m.funcs[start];
-            let startfunc_type = &m.types[startfunc.typeidx.0];
+            // the indices of locally defined functions, so we have
+            // to figure out whether we're indexing into the functions vec
+            // or the imported functions vec.
+            // Might want to combine those?
+            let startfunc_typeidx = if start < m.imported_functions.len() {
+                m.imported_functions[start].value
+            } else {
+                m.funcs[start - m.imported_functions.len()].typeidx
+            };
+            let startfunc_type = &m.types[startfunc_typeidx.0];
             let valid_startfunc_type = &FuncType {
                 params: vec![],
                 return_type: None,
