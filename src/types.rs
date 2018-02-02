@@ -388,6 +388,12 @@ pub enum ConstOpcode {
     I64Const(i64),
     F32Const(f32),
     F64Const(f64),
+    // BUGGO: Allowing get_global in a const expr seems VERY SUSPICIOUS,
+    // since globals are supposed to be *initialized* in a const expr.
+    // According to wat2wasm `get_global` in an initializer can only
+    // reference globals imported by the module.
+    // Which is perfectly reasonable but somewhat surprising.
+    // Deal with this eventually.
     GetGlobal(u32),
 }
 

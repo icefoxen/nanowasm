@@ -609,6 +609,15 @@ impl Interpreter {
     }
 
 
+    /// Evaluates the constexpr in the current context.
+    /// This is a PITA 'cause a constexpr might be `get_global`, but hey.
+    fn eval_constexpr(&mut self, expr: &ConstExpr) -> Result<Value, Error> {
+        // I have no damn idea why a constexpr is defined to be a sequence
+        // when it seems to only ever 
+        let expr = expr.0.last().unwrap();
+        unimplemented!()
+    }
+
     /// Returns a GlobalAddress from a given index
     fn resolve_global(state: &State, module_addr: ModuleAddress, idx: GlobalIdx) -> GlobalAddress {
         assert!(module_addr.0 < state.module_instances.len());
