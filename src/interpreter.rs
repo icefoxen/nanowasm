@@ -954,8 +954,13 @@ impl Interpreter {
                 }
                 End => {
                     // Done with whatever block we're in
-                    // TODO: This is probably incorrect.
-                    frame.pop_label(0);
+                    // OR, we are at the end of the function and must return;
+                    // if so, popping the label is NOT what we want 'cause we
+                    // have no labels.
+                    // TODO: This may still be incorrect.
+                    if frame.ip != func.body.len() - 1 {
+                        frame.pop_label(0);
+                    } // else we're at the end of the function, do nothing
                 }
                 Br(i) => {
                     let target_ip = frame.pop_label(i as usize);
