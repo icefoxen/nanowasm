@@ -206,7 +206,7 @@ impl FuncInstance {
         let mut accm = vec![];
         while offset < body.len() {
             let op = &body[offset];
-            println!("Computing jump table: {}, {:?}", offset, op);
+            // println!("Computing jump table: {}, {:?}", offset, op);
             match *op {
                 Block(_) => {
                     offset = FuncInstance::find_block_close(body, offset, &mut accm);
@@ -528,7 +528,7 @@ impl Interpreter {
                 module: module_instance_address,
                 jump_table: FuncInstance::compute_jump_table(&func.body),
             };
-            println!("Function: {:?}", instance);
+            println!("Created function instance: {:?}", instance);
             self.state.funcs.push(instance);
             inst.functions.push(address);
         }
@@ -540,10 +540,18 @@ impl Interpreter {
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         inst.memory = if let Some(mut memory) = module.mem.clone() {
-            memory.initialize(&module.mem_initializers)
-                .expect("Invalid memory init");
-            let mem_addr = MemoryAddress(self.store.mems.len());
-            self.store.mems.push(memory);
+            let store = &mut self.store;
+            for &(ref offset_expr, ref val) in &module.mem_initializers {
+                let offset_value = Interpreter::eval_constexpr(&offset_expr, store)
+                    .unwrap();
+                // TODO: This will panic on failure;
+                // replacing it with TryFrom may be apropos.
+                let offset_i: u32 = offset_value.into();
+                memory.initialize(offset_i, &val)
+                    .expect("Invalid memory init");
+            }
+            let mem_addr = MemoryAddress(store.mems.len());
+            store.mems.push(memory);
             Some(mem_addr)
         } else {
             None
@@ -569,22 +577,28 @@ impl Interpreter {
         // This has to be in its own block 'cause we borrow `module`
         // and don't clone all of it.
         inst.globals = {
+            // Borrow this so we don't have wacky borrowing problems
+            // associated with `self` in a closure and whatever.
+            let store = &mut self.store;
             // Create an iterator of initialized Global values
             let initialized_globals = module.globals.iter()
                 .map(|&(ref global, ref init)| {
                     let mut g = global.clone();
-                    g.initialize(init)
-                        .expect("TODO");
+                    let init_value = Interpreter::eval_constexpr(init, store)
+                        .expect("TODO: Handle failures");
+                    println!("Initializing global {:?} to {:?}", g, init_value);
+                    g.initialize(init_value);
                     g
-                });
+                })
+                .collect::<Vec<_>>();
             
             // Get the address of the next Global slot,
             // shove all the initialized Global's into it,
             // and then get the address again, and that's the
             // mapping for our GlobalAddress's for this module.
-            let global_addr_start = self.store.globals.len();
-            self.store.globals.extend(initialized_globals);
-            let global_addr_end = self.store.globals.len();
+            let global_addr_start = store.globals.len();
+            store.globals.extend(initialized_globals);
+            let global_addr_end = store.globals.len();
             (global_addr_start..global_addr_end)
                 .map(GlobalAddress)
                 .collect()
@@ -611,11 +625,17 @@ impl Interpreter {
 
     /// Evaluates the constexpr in the current context.
     /// This is a PITA 'cause a constexpr might be `get_global`, but hey.
-    fn eval_constexpr(&mut self, expr: &ConstExpr) -> Result<Value, Error> {
+    fn eval_constexpr(expr: &ConstExpr, store: &Store) -> Result<Value, Error> {
         // I have no damn idea why a constexpr is defined to be a sequence
-        // when it seems to only ever 
+        // when it seems to only ever actually use the last value.
         let expr = expr.0.last().unwrap();
-        unimplemented!()
+        match *expr {
+            ConstOpcode::I32Const(v) => Ok(Value::I32(v)),
+            ConstOpcode::I64Const(v) => Ok(Value::I64(v)),
+            ConstOpcode::F32Const(v) => Ok(Value::F32(v)),
+            ConstOpcode::F64Const(v) => Ok(Value::F64(v)),
+            ConstOpcode::GetGlobal(i) => unimplemented!(),
+        }
     }
 
     /// Returns a GlobalAddress from a given index
@@ -923,7 +943,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Value> {
         let func = &state.funcs[func.0];
-        println!("Params: {:?}, args: {:?}", func.functype.params, args);
+        // println!("Params: {:?}, args: {:?}", func.functype.params, args);
         let frame = &mut StackFrame::from_func_instance(func, args);
         use parity_wasm::elements::Opcode::*;
         use std::usize;
@@ -933,8 +953,8 @@ impl Interpreter {
             }
             let op = &func.body[frame.ip];
 
-            println!("Frame: {:?}", frame);
-            println!("Op: {:?}", op);
+            // println!("Frame: {:?}", frame);
+            // println!("Op: {:?}", op);
             match *op {
                 Unreachable => panic!("Unreachable?"),
                 Nop => (),
@@ -1768,7 +1788,10 @@ impl Interpreter {
                 })?;
             //println!("target module: {:#?}", target_module);
             let function_idx = target_module.exported_functions.iter()
-                .find(|funcs| {println!("Searching for {}, got {}", func_name, funcs.name); funcs.name == func_name})
+                .find(|funcs| {
+                    // println!("Searching for {}, got {}", func_name, funcs.name); 
+                    funcs.name == func_name
+                })
                 .ok_or(Error::NotExported {
                     module: module_name.to_owned(),
                     name: func_name.to_owned(),

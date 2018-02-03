@@ -371,8 +371,11 @@ impl Memory {
         //self.max = Some(size);
     }
 
-    pub fn initialize(&mut self, inits: &[(ConstExpr, Vec<u8>)]) -> Result<(), ()> {
-        // TODO
+    pub fn initialize(&mut self, offset: u32, val: &[u8]) -> Result<(), ()> {
+        let offset_start = offset as usize;
+        let offset_end = offset_start + val.len();
+        assert!(offset_end <= self.data.len());
+        self.data.as_mut_slice()[offset_start..offset_end].copy_from_slice(val);
         Ok(())
     }
 }
@@ -442,9 +445,8 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn initialize(&mut self, init_code: &ConstExpr) -> Result<(), ()> {
-        // TODO
-        Ok(())
+    pub fn initialize(&mut self, init_value: Value) {
+        self.value = init_value;
     }
 }
 
