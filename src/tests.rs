@@ -24,7 +24,7 @@ lazy_static! {
 
 #[test]
 fn test_create() {
-    let loaded_module = LoadedModule::new("inc", INC.clone());
+    let loaded_module = LoadedModule::new("inc", INC.clone()).unwrap();
     let validated_module = loaded_module.validate();
     let mut interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
@@ -33,7 +33,7 @@ fn test_create() {
 
 #[test]
 fn test_create_fib() {
-    let mut loaded_module = LoadedModule::new("fib", FIB.clone());
+    let mut loaded_module = LoadedModule::new("fib", FIB.clone()).unwrap();
     let validated_module = loaded_module.validate();
     let interp = Interpreter::new().with_module(validated_module);
     println!("{:#?}", interp);
@@ -42,7 +42,7 @@ fn test_create_fib() {
 
 #[test]
 fn test_run_fib() {
-    let mut loaded_module = LoadedModule::new("fib", FIB.clone());
+    let mut loaded_module = LoadedModule::new("fib", FIB.clone()).unwrap();
     let validated_module = loaded_module.validate();
     let mut interp = Interpreter::new().with_module(validated_module)
         .unwrap();
@@ -78,7 +78,7 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
         .build()
         .build()
         .build();
-    let mut loaded = LoadedModule::new("test", module);
+    let mut loaded = LoadedModule::new("test", module).unwrap();
     let validated_module = loaded.validate();
     let mut interp = Interpreter::new().with_module(validated_module)
         .unwrap();
