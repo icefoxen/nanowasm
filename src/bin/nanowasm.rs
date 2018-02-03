@@ -148,9 +148,28 @@ pub struct Spec {
     pub commands: Vec<Command>,
 }
 
+fn make_spectest_module() -> ValidatedModule {
+    use parity_wasm::builder;
+    use parity_wasm::elements;
+    let module = builder::ModuleBuilder::new()
+        .build();
+    let mut loaded_module = LoadedModule::new("spectest", module).unwrap();
+    let f = |v: &mut Vec<Value>| {
+        let vl = v.pop();
+        println!("PRINT OUTPUT: {:?}", vl);
+    };
+    let f_sig = FuncType {
+        params: vec![elements::ValueType::I32],
+        return_type: None,
+    };
+    loaded_module.add_host_func("print", f, &f_sig);
+    loaded_module.validate()
+}
+
 fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
     let mut current_module = None;
     let mut current_interpreter = None;
+
     for c in &spec.commands {
         println!("Command {:?}", c);
         match *c {
@@ -170,7 +189,9 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 let loaded_module = LoadedModule::new(filename, module).unwrap();
                 let validated_module = loaded_module.validate();
                 current_module = Some(validated_module.clone());
-                current_interpreter = Some(Interpreter::new().with_module(validated_module)
+                current_interpreter = Some(Interpreter::new()
+                    .with_module(make_spectest_module()).expect("Spectest module invalid; should never happen")
+                    .with_module(validated_module)
                     .expect("Could not initialize module for test"));
 
                 print!("Instantiated ");

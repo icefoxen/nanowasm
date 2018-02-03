@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use parity_wasm::elements;
 
 use types::*;
@@ -118,27 +119,31 @@ impl LoadedModule {
         // contains the code and the `function` section
         // contains signature indices.  We join them back
         // together here.
-        if let (Some(code), Some(functions)) = (module.code_section(), module.function_section()) {
-            assert_eq!(code.bodies().len(), functions.entries().len());
-            // Evade double-borrow of m here.
-            let types = &m.types;
-            let converted_funcs = code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
-                // Make sure the function signature is a valid type.
-                let type_idx = f.type_ref() as usize;
-                assert!(
-                    type_idx < types.len(),
-                    "Function refers to a type signature that does not exist!"
-                );
+        match (module.code_section(), module.function_section()) {
+            (Some(code), Some(functions)) => {
+                assert_eq!(code.bodies().len(), functions.entries().len());
+                // Evade double-borrow of m here.
+                let types = &m.types;
+                let converted_funcs = code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
+                    // Make sure the function signature is a valid type.
+                    let type_idx = f.type_ref() as usize;
+                    assert!(
+                        type_idx < types.len(),
+                        "Function refers to a type signature that does not exist!"
+                    );
 
-                Func {
-                    typeidx: TypeIdx(type_idx),
-                    locals: types_from_locals(c.locals()),
-                    body: FuncBody::Opcodes(c.code().elements().to_owned()),
-                }
-            });
-            m.funcs.extend(converted_funcs);
-        } else {
-            panic!("Code section exists but type section does not, or vice versa!");
+                    Func {
+                        typeidx: TypeIdx(type_idx),
+                        locals: types_from_locals(c.locals()),
+                        body: FuncBody::Opcodes(c.code().elements().to_owned()),
+                    }
+                });
+                m.funcs.extend(converted_funcs);
+            },
+            (None, None) => (),
+            _ => {
+                panic!("Code section exists but type section does not, or vice versa!");
+            }
         }
 
         // Allocate tables
@@ -344,6 +349,31 @@ impl LoadedModule {
         Ok(m)
     }
 
+    /// Adds a host function, plus an export for it.  Not really ideal, but what can one do
+    /// when parity-wasm doesn't handle them either?  Hmmm.
+    pub fn add_host_func<T>(&mut self, export_name: &str, func: T, params: &FuncType) 
+    where T: Fn(&mut Vec<Value>) + 'static {
+        // Add parameters to the type list if necessary
+        let type_idx = if let Some(i) = self.types.iter().position(|t| t == params) {
+            i
+        } else {
+            self.types.push(params.clone());
+            self.types.len() - 1
+        };
+        // Create and add function
+        let f = Func {
+            typeidx: TypeIdx(type_idx),
+            locals: vec![],
+            body: FuncBody::HostFunction(Rc::new(func))
+        };
+        self.funcs.push(f);
+        let func_idx = self.funcs.len() - 1;
+        // Add export for function.
+        self.exported_functions.push( Export {
+            name: export_name.to_owned(),
+            value: FuncIdx(func_idx)
+        })
+    }
 
     /// Validates the module: makes sure types are correct,
     /// all the indices into various parts of the module are valid, etc.

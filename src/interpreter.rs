@@ -924,9 +924,18 @@ impl Interpreter {
                 }
                 params_slice
             };
-            // Some(Value::I32(3))
+            // Recurse into `exec()`, which creates a new stack frame.
             Interpreter::exec(store, state, function_addr, params_slice)
         };
+
+
+        // Because a function call must actually pop values off the stack,
+        // we have to remove the values that were passed to the function in 
+        // `params_slice`
+        // TODO: Might be easier to just slice them off directly, since they get
+        // copied anyway?
+        let new_stack_len = frame.value_stack.len() - f.functype.params.len();
+        frame.value_stack.truncate(new_stack_len);
 
         // Great, now check that the return value matches the stated
         // return type, and push it to the values stack.
@@ -1772,6 +1781,7 @@ impl Interpreter {
             }
         }
         // Return the function's return value (if any).
+        println!("Value stack is: {:?}", frame.value_stack);
         let return_type = frame.value_stack.last().map(|vl| vl.get_type());
         assert_eq!(return_type, func.functype.return_type);
         frame.value_stack.last().cloned()
