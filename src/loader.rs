@@ -133,7 +133,7 @@ impl LoadedModule {
                 Func {
                     typeidx: TypeIdx(type_idx),
                     locals: types_from_locals(c.locals()),
-                    body: c.code().elements().to_owned(),
+                    body: FuncBody::Opcodes(c.code().elements().to_owned()),
                 }
             });
             m.funcs.extend(converted_funcs);
@@ -343,6 +343,7 @@ impl LoadedModule {
 
         Ok(m)
     }
+
 
     /// Validates the module: makes sure types are correct,
     /// all the indices into various parts of the module are valid, etc.

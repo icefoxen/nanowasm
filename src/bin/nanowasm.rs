@@ -215,10 +215,10 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
             Command::AssertReturnCanonicalNan { .. } |
             Command::AssertReturnArithmeticNan { .. } |
             Command::AssertTrap { .. } | 
+            Command::Register { .. } |
             Command::AssertMalformed { .. } => {
-                println!("TODO: Need to test this assertion case: {:?}", c);
+                panic!("TODO: Need to test this assertion case: {:?}", c);
             },
-            Command::Register { .. } => (),
             Command::Action { ref action, .. } => {
                 let module = current_module.as_ref().expect("Tried to AssertReturn with no module loaded");
                 let interp = current_interpreter.as_mut().unwrap();

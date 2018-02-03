@@ -1,6 +1,7 @@
 //! Common traits and type definitions used everywhere in nanowasm.
 
 use std;
+use std::rc::Rc;
 
 use parity_wasm::elements;
 use num::ToPrimitive;
@@ -273,12 +274,33 @@ impl_extend_into!(i64, f64);
 impl_extend_into!(u64, f64);
 impl_extend_into!(f32, f64);
 
+
+#[derive(Clone)]
+pub enum FuncBody {
+    Opcodes(Vec<elements::Opcode>),
+    /// A function implemented in Rust.  Currently it is very restricted;
+    /// it can basically only affect the operation stack.
+    /// This should be expanded but needs a bit of refactoring to do so,
+    /// to expose more of the interpreter innards in a nice way.
+    HostFunction(Rc<Fn(&mut Vec<Value>)>)
+}
+
+use std::fmt;
+impl fmt::Debug for FuncBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+        match *self {
+            FuncBody::Opcodes(ref o) => write!(f, "Opcodes({:?})", o),
+            FuncBody::HostFunction(_) => write!(f, "HostFunction(&mut Vec<Value>)")
+        }
+    }
+}
+
 /// A function ready to be executed.
 #[derive(Debug, Clone)]
 pub struct Func {
     pub typeidx: TypeIdx,
     pub locals: Vec<elements::ValueType>,
-    pub body: Vec<elements::Opcode>,
+    pub body: FuncBody,
 }
 
 /// A table.
