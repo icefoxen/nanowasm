@@ -54,6 +54,19 @@ pub enum Action {
         field: String,
     }
 }
+impl Action {
+    fn run(&self, module_name: &str, interp: &mut Interpreter) -> Option<Value> {
+        match *self {
+            Action::Invoke { ref field, ref args, .. } => {
+                let arg_values = args.iter().map(From::from).collect::<Vec<_>>();
+                let res = interp.run_export(module_name, field, &arg_values)
+                    .expect("AssertReturn did not run successfully!");
+                res
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
@@ -137,6 +150,7 @@ pub struct Spec {
 
 fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
     let mut current_module = None;
+    let mut current_interpreter = None;
     for c in &spec.commands {
         println!("Command {:?}", c);
         match *c {
@@ -156,8 +170,8 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 let loaded_module = LoadedModule::new(filename, module).unwrap();
                 let validated_module = loaded_module.validate();
                 current_module = Some(validated_module.clone());
-                let mut _interp = Interpreter::new().with_module(validated_module)
-                    .expect("Could not initialize module for test");
+                current_interpreter = Some(Interpreter::new().with_module(validated_module)
+                    .expect("Could not initialize module for test"));
 
                 print!("Instantiated ");
                 println!("Ok.");
@@ -168,7 +182,7 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 file_path.push(filename);
                 let module = parity_wasm::deserialize_file(&file_path).unwrap();                    
                 match LoadedModule::new(filename, module) {
-                    Ok(loaded_module) => {
+                    Ok(_loaded_module) => {
                         panic!("AssertInvalid: should have gotten Error::Invalid, instead got Ok")
                     },
                     Err(Error::Invalid{ref reason, ..}) => {
@@ -186,23 +200,14 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
 
             },
             Command::AssertReturn { ref action, ref expected, .. }  => {
-                match *action {
-                    Action::Invoke { ref field, ref args, .. } => {
-                        //println!("Invoking {:?}, {:?}", field, args);
-                        let module = current_module.clone().expect("Tried to AssertReturn with no module loaded");
-                        // Need to_owned() here 'cause we move `module` into `interp` next.
-                        let module_name = &module.borrow_inner().name.to_owned();
-                        let mut interp = Interpreter::new().with_module(module)
-                            .expect("Could not initialize module for test");
-                        let arg_values = args.iter().map(From::from).collect::<Vec<_>>();
-                        let res = interp.run_export(module_name, field, &arg_values)
-                            .expect("AssertReturn did not run successfully!");
-                        let return_values = res.into_iter().collect::<Vec<Value>>();
-                        let expected_return_values = expected.iter().map(From::from).collect::<Vec<Value>>();
-                        assert_eq!(return_values, expected_return_values);
-                    }
-                    _ => unimplemented!(),
-                }
+                //println!("Invoking {:?}, {:?}", field, args);
+                let module = current_module.as_ref().expect("Tried to AssertReturn with no module loaded");
+                let interp = current_interpreter.as_mut().unwrap();
+                let module_name = &module.borrow_inner().name;
+                let res = action.run(module_name, interp);
+                let return_values = res.into_iter().collect::<Vec<Value>>();
+                let expected_return_values = expected.iter().map(From::from).collect::<Vec<Value>>();
+                assert_eq!(return_values, expected_return_values);
             },
             Command::AssertUninstantiable { .. } | 
             Command::AssertExhaustion { .. } |
@@ -214,7 +219,12 @@ fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
                 println!("TODO: Need to test this assertion case: {:?}", c);
             },
             Command::Register { .. } => (),
-            Command::Action { .. } => (),
+            Command::Action { ref action, .. } => {
+                let module = current_module.as_ref().expect("Tried to AssertReturn with no module loaded");
+                let interp = current_interpreter.as_mut().unwrap();
+                let module_name = &module.borrow_inner().name;
+                let _res = action.run(module_name, interp);
+            },
         }
     }
     Ok(())
