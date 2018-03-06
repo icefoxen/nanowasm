@@ -10,17 +10,17 @@ The road map is, more or less in order:
 
  * Implement all of wasm32 1.0 core correctly, passing standard tests and fuzzing
  * Make it *easy* to run as a standalone interpreter, or embedded in other programs
- * Make it *easy* to embed in Rust programs and extend with custom modules
+ * Make it *easy* to extend with custom modules written in Rust
  * Make it *easy* to run Rust code built with `no_std` for the wasm32-unknown-unknown target, and provide a basic console API
  * Make it possible to set hard execution limits on memory and CPU consumed (somehow) and easily sandbox it to forbid access to random resources (like files)
  * Make it reasonably fast?
  * Nice debugging tools?
- * JIT?  Either using LLVM or writing my own; I kind of want to write my own for the experience.
+ * JIT?  Either using LLVM, cretonne, or writing my own; I kind of want to write my own for the experience.
  * Load custom modules from DLL's written in Rust or C???
 
 # Non-goals
 
- * Don't intend to run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) it's little-endian.  Since I kinda want to make it a JIT then it will be platform-specific anyway.
+ * Don't intend to run correctly on big-endian platforms, since where byte layout matters to wasm (in memory's) wasm specifies little-endian.  Since I kinda want to make it a JIT then it will be platform-specific anyway.
  * Don't intend to never use `unsafe`; if we can make a *significant* performance win with unsafe code, we should.  Properly-validated WebAssembly code should be safe itself.  Naturally, not using unsafe would be best.
 
 
@@ -61,14 +61,14 @@ result in a panic (should we use `assert!` or `debug_assert!` here?  Depends on 
 sometimes lead to the compiler making smarter code, for example eliding bounds checks after one).
 
 One place where this is *not* possible to statically verify is if you set resource bounds and the program exceeds
-them.  Need to think about this.
+them.  Need to think about this.  There may be other places; the wasm test suite should (hopefully) cover these.
 
 # Similar projects
 
  * parity-wasm: A crate for serializing/deserializing wasm code.  
  * [wasmi](https://github.com/pepyakin/wasmi): A webassembly interpreter; used to be part of parity-wasm but got
    split off into its own thing.  Quite good, but I wanted to write my own
- * <https://github.com/sunfishcode/wasmstandalone>: A wasm standalone JIT.
+ * <https://github.com/sunfishcode/wasmstandalone>: A wasm standalone JIT using cretonne
  * [WebAssembly reference interpreter](https://github.com/WebAssembly/spec/tree/master/interpreter)
  * [WebAssembly Binary Toolkit](https://github.com/WebAssembly/wabt)
 
