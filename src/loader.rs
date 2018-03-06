@@ -1,3 +1,5 @@
+/// Methods for loading a wasm binary module into a more convenient form.
+
 use std::rc::Rc;
 use parity_wasm::elements;
 
@@ -33,16 +35,18 @@ pub struct LoadedModule {
     pub funcs: Vec<Func>,
     /// Index of start function, if any.
     pub start: Option<FuncIdx>,
-    /// wasm 1.0 defines only a single table,
-    /// but we can import multiple of them?
+    /// wasm 1.0 defines only a single table.
+    /// Even if we import some other table we can only
+    /// do it if there's not an existing one, I think.
     pub tables: Option<Table>,
-    /// Initializer code for tables
+    /// Initializer code for table
     /// `(offset, values)`
     pub table_initializers: Vec<(ConstExpr, Vec<FuncIdx>)>,
     /// wasm 1.0 defines only a single memory.
     pub mem: Option<Memory>,
     /// Initializer code for data segments.
     pub mem_initializers: Vec<(ConstExpr, Vec<u8>)>,
+    /// Global values.
     pub globals: Vec<(Global, ConstExpr)>,
     /// Exported values
     pub exported_functions: Vec<Export<FuncIdx>>,
@@ -76,16 +80,23 @@ impl ValidatedModule {
 impl LoadedModule {
     /// Instantiates and initializes a new module from the `parity_wasm` module type.
     /// This basically goes from a representation very close to the raw webassembly
-    /// binary format to a representation more convenient to be loaded.
+    /// binary format to a representation more convenient to be loaded into the interpreter's
+    /// runtime data.
     ///
     /// Does NOT validate the module or run the start function though!
     pub fn new(name: &str, module: elements::Module) -> Result<Self, Error> {
-        assert_eq!(module.version(), 1);
+        if module.version() != 1 {
+            return Err(Error::VersionMismatch {
+                module: name.to_owned(),
+                expected: 1,
+                got: module.version()
+            });
+        }
 
         let mut m = Self {
             name: name.to_owned(),
             types: vec![],
-            funcs: vec![],
+            funcs: vec![], 
             start: None,
 
             tables: None,

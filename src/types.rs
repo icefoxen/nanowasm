@@ -212,6 +212,7 @@ impl From<bool> for Value {
 /// Like From but doesn't promise to preserve all data.
 /// This should already exist, dammit.
 /// Num crate is working on it: <https://github.com/rust-num/num/issues/183>
+/// TODO: This now exists, see https://docs.rs/num/0.1.42/num/cast/trait.AsPrimitive.html
 pub trait Wrap<T> {
     fn wrap(self) -> T;
 }
@@ -240,6 +241,7 @@ impl_wrap_into!(u64, f32);
 
 /// Convert one type to another by extending with leading zeroes
 /// or one's (depending on destination type)
+/// TODO: num's AsPrimitive trait also covers this case.
 pub trait Extend<T> {
     /// Convert one type to another by extending with leading zeroes.
     fn extend(self) -> T;
@@ -283,7 +285,8 @@ pub enum FuncBody {
     /// A function implemented in Rust.  Currently it is very restricted;
     /// it can basically only affect the operation stack.
     /// This should be expanded but needs a bit of refactoring to do so,
-    /// to expose more of the interpreter innards in a nice way.
+    /// to expose more of the interpreter innards in a nice way (call
+    /// frame, etc).
     HostFunction(Rc<Fn(&mut Vec<Value>)>),
 }
 
@@ -297,7 +300,7 @@ impl fmt::Debug for FuncBody {
     }
 }
 
-/// A function ready to be executed.
+/// A runtime function able to be executed in the context of a module.
 #[derive(Debug, Clone)]
 pub struct Func {
     pub typeidx: TypeIdx,
@@ -319,6 +322,7 @@ pub struct Table {
     /// Maximum size
     pub max: Option<u32>,
 }
+
 impl Table {
     pub fn new() -> Self {
         Self {
@@ -327,11 +331,12 @@ impl Table {
         }
     }
 
-    /// Resizes the underlying storage, zero'ing it in the process.
-    /// For a Table it fills it with `FuncIdx(0)`, even
-    /// in the case that there IS no function 0.
+    /// Resizes the underlying table, filling it with
+    /// `FuncIdx(usize::MAX)` in the process.  Even
+    /// in the (likely) case that there IS no function `usize::MAX`.
     ///
     /// BUGGO: Table values are allowed to be uninitialized, apparently.
+    /// Cannot contain invalid values, apparently.
     pub fn fill(&mut self, size: u32) {
         self.data.resize(size as usize, FuncIdx(std::usize::MAX));
         self.max = Some(size);
@@ -348,7 +353,7 @@ impl Table {
 pub struct Memory {
     /// Actual data
     pub data: Vec<u8>,
-    /// Maximum size, in units of 65,536 bytes
+    /// Maximum size, in units of 65,536 byte pages (`Memory::PAGE_SIZE`).
     pub max: Option<u32>,
 }
 
@@ -436,8 +441,7 @@ impl TryFrom<elements::Opcode> for ConstOpcode {
     }
 }
 
-/// A constant expression; a list of opcodes
-/// that can only be `const` or `get_global` instructions.
+/// A constant expression; a list of `ConstOpcode`'s.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstExpr(pub Vec<ConstOpcode>);
 
@@ -470,8 +474,11 @@ impl Global {
     pub fn initialize(&mut self, init_value: Value) {
         self.value = init_value;
     }
+
 }
 
+/// An import declaration.  `T` is generally some sort of type
+/// that says what the type and value of the import is.
 #[derive(Debug, Clone)]
 pub struct Import<T> {
     pub module_name: String,
@@ -479,12 +486,14 @@ pub struct Import<T> {
     pub value: T,
 }
 
+/// An export declaration.
 #[derive(Debug, Clone)]
 pub struct Export<T> {
     pub name: String,
     pub value: T,
 }
 
+/// Error type using the `failure` crate.
 #[derive(Debug, Fail)]
 pub enum Error {
     /// Tried to import a module that does not exist.
@@ -506,5 +515,12 @@ pub enum Error {
     Invalid {
         module: String,
         reason: String,
+    },
+    /// Version mismatch
+    #[fail(display = "Module {} has the wrong version; expected {}, got {}", module, expected, got)]
+    VersionMismatch {
+        module: String,
+        expected: u32,
+        got: u32,
     }
 }

@@ -10,8 +10,7 @@ git submodule update --init --recursive
 Build wabt:
 
 ```
-cd spec
-cd wabt
+cd spec/wabt
 make -j$(nproc)
 cd ..
 ```
@@ -19,5 +18,5 @@ cd ..
 Run tests (from the `nanowasm/spec` directory)
 
 ```
-
+python3 run-nanowasm-tests.py
 ```

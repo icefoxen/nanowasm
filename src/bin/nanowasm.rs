@@ -35,6 +35,8 @@ impl<'a> From<&'a RuntimeValue> for Value {
     }
 }
 
+/// Type for loading the wasm test suite's JSON format.
+/// An `Action` is something that needs to be done as part of a test.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum Action {
@@ -68,6 +70,8 @@ impl Action {
     }
 }
 
+/// Type for loading the wasm test suite's JSON format.
+/// A `Command` either loads a module or asserts some condition,
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum Command {
@@ -140,12 +144,15 @@ pub enum Command {
     },
 }
 
+/// A test case to run against.
 #[derive(Deserialize, Debug)]
 pub struct Spec {
     pub source_filename: String,
     pub commands: Vec<Command>,
 }
 
+/// Creates a module named `spectest` which contains certain debugging
+/// functions, such as `print`.
 fn make_spectest_module() -> ValidatedModule {
     use parity_wasm::builder;
     use parity_wasm::elements;
@@ -163,6 +170,8 @@ fn make_spectest_module() -> ValidatedModule {
     loaded_module.validate()
 }
 
+/// Loads the wasm test suite JSON file at the given path and executes the
+/// tests in it.
 fn run_spec(spec: &Spec, file_dir: &path::Path) -> Result<(), ()> {
     let mut current_module = None;
     let mut current_interpreter = None;

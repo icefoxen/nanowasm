@@ -74,7 +74,8 @@ pub fn u64_to_f64(i: u64) -> f64 {
 /// The sign bit `s` may be anything.
 ///
 /// On some old-fashioned platforms (PA-RISC, some MIPS)
-/// a signaling NaN is marked by `n=1`, but oh well.
+/// a signaling NaN is marked by `n=1`, but the 2008 revision of
+/// IEEE754 defines it to be `n=0`.
 pub fn f32_is_signaling_nan(f: f32) -> bool {
     let uf: u32 = f.to_bits();
     let signal_bit = 0b0000_0000_0100_0000_0000_0000_0000_0000;
