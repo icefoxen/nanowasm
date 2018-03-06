@@ -309,7 +309,7 @@ fn main() {
             .with_module(validated_module)
             .expect("Could not initialize module");
 
-        let start_addr = FunctionAddress::new(1);
+        let start_addr = FunctionAddress(1);
         interp.run(start_addr, &vec![Value::I32(30)]);
         println!("{:#?}", interp);
     }

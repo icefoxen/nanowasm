@@ -474,7 +474,6 @@ impl Global {
     pub fn initialize(&mut self, init_value: Value) {
         self.value = init_value;
     }
-
 }
 
 /// An import declaration.  `T` is generally some sort of type

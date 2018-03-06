@@ -1,3 +1,5 @@
+//! The actual run-time interpreter.
+
 use std;
 use std::collections::HashMap;
 
@@ -9,17 +11,20 @@ use types::*;
 use util::*;
 use loader::*;
 
-/// A label to a particular block: just an instruction index.
+/// A label pointing to a particular block: just an instruction index.
 /// The label index is implicit in the labels stack; label 0 is always
-/// the top of the stack.
+/// the **top** of the stack.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct BlockLabel(usize);
 
 /// The activation record for an executing function.
 #[derive(Debug, Clone, Default)]
 struct StackFrame {
+    /// Value stack; "the stack".
     value_stack: Vec<Value>,
+    /// Current label stack.
     labels: Vec<BlockLabel>,
+    /// Local variables.
     locals: Vec<Value>,
     /// Where in the current function execution is.
     ip: usize,
@@ -44,8 +49,8 @@ impl StackFrame {
         locals.extend(iter);
 
         Self {
-            value_stack: vec![],
-            labels: vec![],
+            value_stack: Vec::with_capacity(8),
+            labels: Vec::with_capacity(8),
             locals: locals,
             ip: 0,
         }
@@ -110,7 +115,7 @@ impl StackFrame {
     /// The top of the stack is the second value returned, the first
     /// is one down from the top.
     ///
-    /// Panics if the stack is empty or the Value is not the right
+    /// Panics if the stack is empty or either of the Value's is not the right
     /// numeric type.
     fn pop2_as<T1, T2>(&mut self) -> (T1, T2)
     where
@@ -138,17 +143,10 @@ impl StackFrame {
     }
 }
 
-macro_rules! impl_address_new {
-    ($t: ident) => {
-	impl $t {
-	    pub fn new(i: usize) -> Self {
-		$t(i)
-	    }
-	}
-    }
-}
 
 /// Function address type; refers to a particular `FuncInstance` in the Store.
+/// All `*Address` types are indices into the runtime `Store`; contrast with `*Idx`
+/// types which are indices into a particular module's local namespace.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FunctionAddress(pub usize);
 /// Table address type
@@ -163,8 +161,6 @@ pub struct GlobalAddress(pub usize);
 /// Module instance address type
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ModuleAddress(pub usize);
-
-impl_address_new!(FunctionAddress);
 
 /// For forward jumps (if, block) we need to know where to jump TO.
 /// Serialized wasm doesn't store this information explicitly,
@@ -202,7 +198,7 @@ impl FuncInstance {
         match *body {
             FuncBody::Opcodes(ref opcodes) => {
                 use parity_wasm::elements::Opcode::*;
-                // TODO: I would be sort of happier properly walking a sequence, OCaml
+                // TODO: I would be sort of happier recursively walking a sequence, OCaml
                 // style, but oh well.
                 let mut offset = 0;
                 let mut accm = vec![];
@@ -235,13 +231,14 @@ impl FuncInstance {
         accm: &mut Vec<JumpTarget>,
     ) -> usize {
         use std::usize;
+        use parity_wasm::elements::Opcode::*;
         let mut offset = start_offset;
         // TODO: Potentially invalid here, but, okay.
         let mut else_offset = usize::MAX;
         loop {
             let op = &body[offset];
             match *op {
-                elements::Opcode::End => {
+                End => {
                     // Found matching end, yay.
                     let jt = JumpTarget {
                         block_start_instruction: start_offset,
@@ -251,11 +248,17 @@ impl FuncInstance {
                     accm.push(jt);
                     return offset;
                 }
-                elements::Opcode::Else => {
+                // TODO: Only valid within If blocks,
+                // but we don't check for that...
+                // Easy to do just by having an argument to this function
+                // that says whether or not we're in an If, and panic if we
+                // find an invalid Else.
+                Else => {
                     else_offset = offset;
                 }
                 // Opening another block, recurse.
-                elements::Opcode::Block(_) => {
+                Block(_) | If(_) => {
+                //Block(_)=> {
                     offset = FuncInstance::find_block_close(body, offset, accm);
                 }
                 _ => (),

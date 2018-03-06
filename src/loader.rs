@@ -77,7 +77,7 @@ impl ValidatedModule {
     }
 }
 
-fn malformed<T>(name: &str, msg: &str) -> Result<T,Error> {
+fn malformed<T>(name: &str, msg: &str) -> Result<T, Error> {
     let e = Error::Malformed {
         module: name.to_owned(),
         message: msg.to_owned(),
@@ -97,14 +97,14 @@ impl LoadedModule {
             return Err(Error::VersionMismatch {
                 module: name.to_owned(),
                 expected: 1,
-                got: module.version()
+                got: module.version(),
             });
         }
 
         let mut m = Self {
             name: name.to_owned(),
             types: vec![],
-            funcs: vec![], 
+            funcs: vec![],
             start: None,
 
             tables: None,
@@ -140,16 +140,24 @@ impl LoadedModule {
         match (module.code_section(), module.function_section()) {
             (Some(code), Some(functions)) => {
                 if code.bodies().len() != functions.entries().len() {
-                    return malformed(name, "Number of function bodies != number of function entries");
+                    return malformed(
+                        name,
+                        "Number of function bodies != number of function entries",
+                    );
                 }
                 // Evade double-borrow of m here.
                 let types = &m.types;
-                let converted_funcs =
-                    code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
+                let converted_funcs = code.bodies()
+                    .iter()
+                    .zip(functions.entries())
+                    .map(|(c, f)| {
                         // Make sure the function signature is a valid type.
                         let type_idx = f.type_ref() as usize;
                         if type_idx >= types.len() {
-                            return malformed(name, "Function refers to a type signature that does not exist!");
+                            return malformed(
+                                name,
+                                "Function refers to a type signature that does not exist!",
+                            );
                         }
                         Ok(Func {
                             typeidx: TypeIdx(type_idx),
@@ -157,12 +165,15 @@ impl LoadedModule {
                             body: FuncBody::Opcodes(c.code().elements().to_owned()),
                         })
                     })
-                    .collect::<Result<Vec<Func>,Error>>()?;
+                    .collect::<Result<Vec<Func>, Error>>()?;
                 m.funcs.extend(converted_funcs);
             }
             (None, None) => (),
             _ => {
-                return malformed(name, "Code section exists but type section does not, or vice versa!");
+                return malformed(
+                    name,
+                    "Code section exists but type section does not, or vice versa!",
+                );
             }
         }
 
@@ -189,11 +200,14 @@ impl LoadedModule {
                     for segment in elements.entries() {
                         let table_idx = segment.index();
                         if table_idx != 0 {
-                            return malformed(name, "Had an Elements segment that referred to table != 0!");
+                            return malformed(
+                                name,
+                                "Had an Elements segment that referred to table != 0!",
+                            );
                         }
-                        let offset_code =
-                            ConstExpr::try_from(segment.offset().code())
-                            .or_else(|_| malformed(name, "Elements section contained invalid const values"))?;
+                        let offset_code = ConstExpr::try_from(segment.offset().code()).or_else(
+                            |_| malformed(name, "Elements section contained invalid const values"),
+                        )?;
 
                         let members: Vec<FuncIdx> = segment
                             .members()
@@ -225,11 +239,14 @@ impl LoadedModule {
                     for segment in data.entries() {
                         let mem_idx = segment.index();
                         if mem_idx != 0 {
-                            return malformed(name, "Had a Data segment that referred to memory != 0!");
+                            return malformed(
+                                name,
+                                "Had a Data segment that referred to memory != 0!",
+                            );
                         }
-                        let offset_code =
-                            ConstExpr::try_from(segment.offset().code())
-                            .or_else(|_| malformed(name, "Data section had invalid constant values!"))?;
+                        let offset_code = ConstExpr::try_from(segment.offset().code()).or_else(
+                            |_| malformed(name, "Data section had invalid constant values!"),
+                        )?;
                         let members = segment.value().to_owned();
                         m.mem_initializers.push((offset_code, members));
                     }
@@ -240,19 +257,23 @@ impl LoadedModule {
 
         // Load globals
         if let Some(globals) = module.global_section() {
-            let global_iter = globals.entries().iter().map(|global| {
-                let global_type = global.global_type().content_type();
-                let mutability = global.global_type().is_mutable();
-                let init_code = ConstExpr::try_from(global.init_expr().code())
-                    .or_else(|_| malformed(name, "Globals section had invalid constant values!"))?;
-                let global = Global {
-                    variable_type: global_type,
-                    mutable: mutability,
-                    value: Value::default_from_type(global_type),
-                };
-                Ok((global, init_code))
-            })
-                .collect::<Result<Vec<(Global, ConstExpr)>,Error>>()?;
+            let global_iter = globals
+                .entries()
+                .iter()
+                .map(|global| {
+                    let global_type = global.global_type().content_type();
+                    let mutability = global.global_type().is_mutable();
+                    let init_code = ConstExpr::try_from(global.init_expr().code()).or_else(|_| {
+                        malformed(name, "Globals section had invalid constant values!")
+                    })?;
+                    let global = Global {
+                        variable_type: global_type,
+                        mutable: mutability,
+                        value: Value::default_from_type(global_type),
+                    };
+                    Ok((global, init_code))
+                })
+                .collect::<Result<Vec<(Global, ConstExpr)>, Error>>()?;
             m.globals.extend(global_iter);
         }
 

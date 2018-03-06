@@ -95,13 +95,10 @@ pub fn f64_is_signaling_nan(f: f64) -> bool {
     f64::is_nan(f) && signal_bit_clear
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_f32_is_signaling_nan() {
         use std::f32;
