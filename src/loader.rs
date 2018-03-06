@@ -77,6 +77,14 @@ impl ValidatedModule {
     }
 }
 
+fn malformed<T>(name: &str, msg: &str) -> Result<T,Error> {
+    let e = Error::Malformed {
+        module: name.to_owned(),
+        message: msg.to_owned(),
+    };
+    Err(e)
+}
+
 impl LoadedModule {
     /// Instantiates and initializes a new module from the `parity_wasm` module type.
     /// This basically goes from a representation very close to the raw webassembly
@@ -131,41 +139,40 @@ impl LoadedModule {
         // together here.
         match (module.code_section(), module.function_section()) {
             (Some(code), Some(functions)) => {
-                assert_eq!(code.bodies().len(), functions.entries().len());
+                if code.bodies().len() != functions.entries().len() {
+                    return malformed(name, "Number of function bodies != number of function entries");
+                }
                 // Evade double-borrow of m here.
                 let types = &m.types;
                 let converted_funcs =
                     code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
                         // Make sure the function signature is a valid type.
                         let type_idx = f.type_ref() as usize;
-                        assert!(
-                            type_idx < types.len(),
-                            "Function refers to a type signature that does not exist!"
-                        );
-
-                        Func {
+                        if type_idx >= types.len() {
+                            return malformed(name, "Function refers to a type signature that does not exist!");
+                        }
+                        Ok(Func {
                             typeidx: TypeIdx(type_idx),
                             locals: types_from_locals(c.locals()),
                             body: FuncBody::Opcodes(c.code().elements().to_owned()),
-                        }
-                    });
+                        })
+                    })
+                    .collect::<Result<Vec<Func>,Error>>()?;
                 m.funcs.extend(converted_funcs);
             }
             (None, None) => (),
             _ => {
-                panic!("Code section exists but type section does not, or vice versa!");
+                return malformed(name, "Code section exists but type section does not, or vice versa!");
             }
         }
 
         // Allocate tables
         if let Some(table) = module.table_section() {
-            println!("Table: {:?}", table);
             // currently we can only have one table section with
             // 0 or 1 elements in it, so.
-            assert!(
-                table.entries().len() < 2,
-                "More than one table entry, should never happen!"
-            );
+            if table.entries().len() > 1 {
+                return malformed(name, "More than one table entry, should never happen!");
+            }
             if let Some(table) = table.entries().iter().next() {
                 // TODO: As far as I can tell, the memory's minimum size is never used?
                 let _min = table.limits().initial();
@@ -181,13 +188,12 @@ impl LoadedModule {
                 if let Some(elements) = module.elements_section() {
                     for segment in elements.entries() {
                         let table_idx = segment.index();
-                        assert_eq!(
-                            table_idx,
-                            0,
-                            "Had an Elements segment that referred to table != 0!"
-                        );
+                        if table_idx != 0 {
+                            return malformed(name, "Had an Elements segment that referred to table != 0!");
+                        }
                         let offset_code =
-                            ConstExpr::try_from(segment.offset().code()).expect("TODO");
+                            ConstExpr::try_from(segment.offset().code())
+                            .or_else(|_| malformed(name, "Elements section contained invalid const values"))?;
 
                         let members: Vec<FuncIdx> = segment
                             .members()
@@ -204,10 +210,9 @@ impl LoadedModule {
         if let Some(memory) = module.memory_section() {
             // currently we can only have one memory section with
             // 0 or 1 elements in it, so.
-            assert!(
-                memory.entries().len() < 2,
-                "More than one memory entry, should never happen!"
-            );
+            if memory.entries().len() > 1 {
+                return malformed(name, "More than one memory entry, should never happen!");
+            }
             if let Some(memory) = memory.entries().iter().next() {
                 // TODO: As far as I can tell, the memory's minimum size is never used?
                 let _min = memory.limits().initial();
@@ -219,13 +224,12 @@ impl LoadedModule {
                 if let Some(data) = module.data_section() {
                     for segment in data.entries() {
                         let mem_idx = segment.index();
-                        assert_eq!(
-                            mem_idx,
-                            0,
-                            "Had a Data segment that referred to memory != 0!"
-                        );
+                        if mem_idx != 0 {
+                            return malformed(name, "Had a Data segment that referred to memory != 0!");
+                        }
                         let offset_code =
-                            ConstExpr::try_from(segment.offset().code()).expect("TODO");
+                            ConstExpr::try_from(segment.offset().code())
+                            .or_else(|_| malformed(name, "Data section had invalid constant values!"))?;
                         let members = segment.value().to_owned();
                         m.mem_initializers.push((offset_code, members));
                     }
@@ -239,14 +243,16 @@ impl LoadedModule {
             let global_iter = globals.entries().iter().map(|global| {
                 let global_type = global.global_type().content_type();
                 let mutability = global.global_type().is_mutable();
-                let init_code = ConstExpr::try_from(global.init_expr().code()).expect("TODO");
+                let init_code = ConstExpr::try_from(global.init_expr().code())
+                    .or_else(|_| malformed(name, "Globals section had invalid constant values!"))?;
                 let global = Global {
                     variable_type: global_type,
                     mutable: mutability,
                     value: Value::default_from_type(global_type),
                 };
-                (global, init_code)
-            });
+                Ok((global, init_code))
+            })
+                .collect::<Result<Vec<(Global, ConstExpr)>,Error>>()?;
             m.globals.extend(global_iter);
         }
 

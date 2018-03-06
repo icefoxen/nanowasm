@@ -516,11 +516,20 @@ pub enum Error {
         module: String,
         reason: String,
     },
-    /// Version mismatch
+    /// Version mismatch in a module.
     #[fail(display = "Module {} has the wrong version; expected {}, got {}", module, expected, got)]
     VersionMismatch {
         module: String,
         expected: u32,
         got: u32,
-    }
+    },
+    /// Module cannot be loaded because it is malformed: multiple tables,
+    /// indexes to non-existent elements, etc.
+    /// Sort of a catch-all for all sorts of edge-cases that a properly-assembled module
+    /// should not have.
+    #[fail(display = "Module {} is malformed: {}", module, message)]
+    Malformed {
+        module: String,
+        message: String
+    },
 }
