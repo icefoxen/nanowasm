@@ -1,6 +1,6 @@
 use parity_wasm;
 use parity_wasm::builder;
-use parity_wasm::elements::{self, Opcode, Module};
+use parity_wasm::elements::{self, Module, Opcode};
 use types::*;
 use loader::*;
 use interpreter::*;
@@ -20,7 +20,6 @@ lazy_static! {
     static ref INC: Module = load_module!("../test_programs/inc.wat");
     static ref FIB: Module = load_module!("../test_programs/fib.wat");
 }
-
 
 #[test]
 fn test_create() {
@@ -44,8 +43,7 @@ fn test_create_fib() {
 fn test_run_fib() {
     let mut loaded_module = LoadedModule::new("fib", FIB.clone()).unwrap();
     let validated_module = loaded_module.validate();
-    let mut interp = Interpreter::new().with_module(validated_module)
-        .unwrap();
+    let mut interp = Interpreter::new().with_module(validated_module).unwrap();
 
     interp.run(FunctionAddress(1), &vec![Value::I32(30)]);
     assert!(false);
@@ -80,8 +78,7 @@ fn test_stack_program(program: &[Opcode], args: &[Value], desired_output: Option
         .build();
     let mut loaded = LoadedModule::new("test", module).unwrap();
     let validated_module = loaded.validate();
-    let mut interp = Interpreter::new().with_module(validated_module)
-        .unwrap();
+    let mut interp = Interpreter::new().with_module(validated_module).unwrap();
     let run_result = interp.run(FunctionAddress(0), args);
     assert_eq!(run_result, desired_output)
 }

@@ -71,7 +71,6 @@ impl ValidatedModule {
     pub fn borrow_inner(&self) -> &LoadedModule {
         &self.0
     }
-
 }
 
 impl LoadedModule {
@@ -102,7 +101,7 @@ impl LoadedModule {
             exported_functions: vec![],
             exported_tables: None,
             exported_memories: None,
-            exported_globals: vec![]
+            exported_globals: vec![],
         };
 
         // Allocate types
@@ -124,22 +123,23 @@ impl LoadedModule {
                 assert_eq!(code.bodies().len(), functions.entries().len());
                 // Evade double-borrow of m here.
                 let types = &m.types;
-                let converted_funcs = code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
-                    // Make sure the function signature is a valid type.
-                    let type_idx = f.type_ref() as usize;
-                    assert!(
-                        type_idx < types.len(),
-                        "Function refers to a type signature that does not exist!"
-                    );
+                let converted_funcs =
+                    code.bodies().iter().zip(functions.entries()).map(|(c, f)| {
+                        // Make sure the function signature is a valid type.
+                        let type_idx = f.type_ref() as usize;
+                        assert!(
+                            type_idx < types.len(),
+                            "Function refers to a type signature that does not exist!"
+                        );
 
-                    Func {
-                        typeidx: TypeIdx(type_idx),
-                        locals: types_from_locals(c.locals()),
-                        body: FuncBody::Opcodes(c.code().elements().to_owned()),
-                    }
-                });
+                        Func {
+                            typeidx: TypeIdx(type_idx),
+                            locals: types_from_locals(c.locals()),
+                            body: FuncBody::Opcodes(c.code().elements().to_owned()),
+                        }
+                    });
                 m.funcs.extend(converted_funcs);
-            },
+            }
             (None, None) => (),
             _ => {
                 panic!("Code section exists but type section does not, or vice versa!");
@@ -170,11 +170,16 @@ impl LoadedModule {
                 if let Some(elements) = module.elements_section() {
                     for segment in elements.entries() {
                         let table_idx = segment.index();
-                        assert_eq!(table_idx, 0, "Had an Elements segment that referred to table != 0!");
-                        let offset_code = ConstExpr::try_from(segment.offset().code())
-                            .expect("TODO");
-                        
-                        let members: Vec<FuncIdx> = segment.members()
+                        assert_eq!(
+                            table_idx,
+                            0,
+                            "Had an Elements segment that referred to table != 0!"
+                        );
+                        let offset_code =
+                            ConstExpr::try_from(segment.offset().code()).expect("TODO");
+
+                        let members: Vec<FuncIdx> = segment
+                            .members()
                             .iter()
                             .map(|x| FuncIdx(*x as usize))
                             .collect();
@@ -203,9 +208,13 @@ impl LoadedModule {
                 if let Some(data) = module.data_section() {
                     for segment in data.entries() {
                         let mem_idx = segment.index();
-                        assert_eq!(mem_idx, 0, "Had a Data segment that referred to memory != 0!");
-                        let offset_code = ConstExpr::try_from(segment.offset().code())
-                            .expect("TODO");
+                        assert_eq!(
+                            mem_idx,
+                            0,
+                            "Had a Data segment that referred to memory != 0!"
+                        );
+                        let offset_code =
+                            ConstExpr::try_from(segment.offset().code()).expect("TODO");
                         let members = segment.value().to_owned();
                         m.mem_initializers.push((offset_code, members));
                     }
@@ -219,8 +228,7 @@ impl LoadedModule {
             let global_iter = globals.entries().iter().map(|global| {
                 let global_type = global.global_type().content_type();
                 let mutability = global.global_type().is_mutable();
-                let init_code = ConstExpr::try_from(global.init_expr().code())
-                        .expect("TODO");
+                let init_code = ConstExpr::try_from(global.init_expr().code()).expect("TODO");
                 let global = Global {
                     variable_type: global_type,
                     mutable: mutability,
@@ -241,28 +249,28 @@ impl LoadedModule {
                         m.imported_functions.push(Import {
                             module_name,
                             field_name,
-                            value: TypeIdx(i as usize)
+                            value: TypeIdx(i as usize),
                         });
-                    },
+                    }
                     elements::External::Table(i) => {
                         m.imported_tables = Some(Import {
                             module_name,
                             field_name,
-                            value: i
+                            value: i,
                         });
-                    },
+                    }
                     elements::External::Memory(i) => {
                         m.imported_memories = Some(Import {
                             module_name,
                             field_name,
-                            value: i
+                            value: i,
                         });
                     }
                     elements::External::Global(i) => {
                         m.imported_globals.push(Import {
                             module_name,
                             field_name,
-                            value: i
+                            value: i,
                         });
                     }
                 }
@@ -274,30 +282,20 @@ impl LoadedModule {
             for entry in exports.entries() {
                 let name = entry.field().to_owned();
                 match *entry.internal() {
-                    elements::Internal::Function(i) => {
-                        m.exported_functions.push( Export {
-                            name,
-                            value: FuncIdx(i as usize)
-                        })
-                    },
+                    elements::Internal::Function(i) => m.exported_functions.push(Export {
+                        name,
+                        value: FuncIdx(i as usize),
+                    }),
                     elements::Internal::Table(i) => {
-                        m.exported_tables = Some( Export {
-                            name,
-                            value: ()
-                        })
-                    },
+                        m.exported_tables = Some(Export { name, value: () })
+                    }
                     elements::Internal::Memory(i) => {
-                        m.exported_memories = Some( Export {
-                            name,
-                            value: ()
-                        })
-                    },
-                    elements::Internal::Global(i) => {
-                        m.exported_globals.push( Export {
-                            name,
-                            value: GlobalIdx(i as usize)
-                        })
-                    },
+                        m.exported_memories = Some(Export { name, value: () })
+                    }
+                    elements::Internal::Global(i) => m.exported_globals.push(Export {
+                        name,
+                        value: GlobalIdx(i as usize),
+                    }),
                 }
             }
         }
@@ -309,8 +307,10 @@ impl LoadedModule {
             // Ensure start function is in bounds.
             let max_start_idx = m.funcs.len() + m.imported_functions.len();
             if start >= max_start_idx {
-                let message = format!("unknown function for start: {}, max start index: {}",
-                                      start, max_start_idx);
+                let message = format!(
+                    "unknown function for start: {}, max start index: {}",
+                    start, max_start_idx
+                );
                 let e = Error::Invalid {
                     module: name.to_owned(),
                     reason: message,
@@ -335,14 +335,17 @@ impl LoadedModule {
                 return_type: None,
             };
             if startfunc_type != valid_startfunc_type {
-                let message = format!("Invalid start function type: {:?}, should take nothing and return nothing", startfunc_type);
+                let message = format!(
+                    "Invalid start function type: {:?}, should take nothing and return nothing",
+                    startfunc_type
+                );
                 let e = Error::Invalid {
                     module: name.to_owned(),
                     reason: message,
                 };
                 return Err(e);
             }
-            
+
             m.start = Some(FuncIdx(start));
         }
 
@@ -351,8 +354,10 @@ impl LoadedModule {
 
     /// Adds a host function, plus an export for it.  Not really ideal, but what can one do
     /// when parity-wasm doesn't handle them either?  Hmmm.
-    pub fn add_host_func<T>(&mut self, export_name: &str, func: T, params: &FuncType) 
-    where T: Fn(&mut Vec<Value>) + 'static {
+    pub fn add_host_func<T>(&mut self, export_name: &str, func: T, params: &FuncType)
+    where
+        T: Fn(&mut Vec<Value>) + 'static,
+    {
         // Add parameters to the type list if necessary
         let type_idx = if let Some(i) = self.types.iter().position(|t| t == params) {
             i
@@ -364,14 +369,14 @@ impl LoadedModule {
         let f = Func {
             typeidx: TypeIdx(type_idx),
             locals: vec![],
-            body: FuncBody::HostFunction(Rc::new(func))
+            body: FuncBody::HostFunction(Rc::new(func)),
         };
         self.funcs.push(f);
         let func_idx = self.funcs.len() - 1;
         // Add export for function.
-        self.exported_functions.push( Export {
+        self.exported_functions.push(Export {
             name: export_name.to_owned(),
-            value: FuncIdx(func_idx)
+            value: FuncIdx(func_idx),
         })
     }
 

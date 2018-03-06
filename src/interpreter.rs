@@ -218,10 +218,8 @@ impl FuncInstance {
                     offset += 1;
                 }
                 accm
-            },
-            FuncBody::HostFunction(_) => {
-                vec![]
             }
+            FuncBody::HostFunction(_) => vec![],
         }
     }
 
@@ -295,12 +293,15 @@ struct ModuleInstance {
     start: Option<FunctionAddress>,
 }
 
-
 impl ModuleInstance {
     /// Takes a loaded-but-not-instantiated module and a slice of other modules
     /// loaded before it, and checks to see whether the module's imports are
     /// all provided by other modules.
-    fn resolve_imports(&mut self, module: &LoadedModule, other_modules: &[ModuleInstance]) -> Result<(), Error> {
+    fn resolve_imports(
+        &mut self,
+        module: &LoadedModule,
+        other_modules: &[ModuleInstance],
+    ) -> Result<(), Error> {
         // Breaking imports/exports apart into separate arrays by type makes
         // life somewhat easier; instead of having a big for loop that checks
         // whether it exists and whether the types match, we just have to check
@@ -309,7 +310,7 @@ impl ModuleInstance {
 
         macro_rules! returning_closures_sucks_rancid_donkey_dong {
             ($import: expr, $module: expr) => {
-                || Error::ModuleNotFound { 
+                || Error::ModuleNotFound {
                     module: $import.module_name.clone(),
                     dependent_module: $module.name.clone()
                 }
@@ -318,7 +319,7 @@ impl ModuleInstance {
 
         macro_rules! generate_not_exported_error {
             ($name: expr, $import: expr, $dependent_module: expr, $typ: expr) => {
-                || Error::NotExported { 
+                || Error::NotExported {
                     name: $name.clone(),
                     module: $import.clone(),
                     dependent_module: $dependent_module.to_owned(),
@@ -327,30 +328,46 @@ impl ModuleInstance {
             }
         }
         for import in &module.imported_functions {
-            let target_module = other_modules.iter()
+            let target_module = other_modules
+                .iter()
                 .find(|m| import.module_name == m.name)
                 .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
-            
-            let export_idx = target_module.exported_functions.iter()
+
+            let export_idx = target_module
+                .exported_functions
+                .iter()
                 .position(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "function", module.name))?;
+                .ok_or_else(generate_not_exported_error!(
+                    target_module.name,
+                    import.field_name,
+                    "function",
+                    module.name
+                ))?;
 
             // TODO: Assert that the import and export types match
-            
+
             let addr = target_module.functions[export_idx];
             self.functions.push(addr);
         }
 
         for import in &module.imported_tables {
-            let target_module = other_modules.iter()
+            let target_module = other_modules
+                .iter()
                 .find(|m| import.module_name == m.name)
                 .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
-            
-            let export = target_module.exported_tables.iter()
-                .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "table", module.name))?;
 
-            // TODO: The "unwrap" here and for Memory 
+            let export = target_module
+                .exported_tables
+                .iter()
+                .find(|e| e.name == import.field_name)
+                .ok_or_else(generate_not_exported_error!(
+                    target_module.name,
+                    import.field_name,
+                    "table",
+                    module.name
+                ))?;
+
+            // TODO: The "unwrap" here and for Memory
             // forms our ghetto error-checking;
             // since we can only have one memory or table,
             // the index is irrelevant.
@@ -358,17 +375,24 @@ impl ModuleInstance {
             self.table = Some(addr);
         }
 
-
         for import in &module.imported_memories {
-            let target_module = other_modules.iter()
+            let target_module = other_modules
+                .iter()
                 .find(|m| import.module_name == m.name)
                 .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
-            
-            let export = target_module.exported_memories.iter()
-                .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "memory", module.name))?;
 
-            // TODO: The "unwrap" here and for Memory 
+            let export = target_module
+                .exported_memories
+                .iter()
+                .find(|e| e.name == import.field_name)
+                .ok_or_else(generate_not_exported_error!(
+                    target_module.name,
+                    import.field_name,
+                    "memory",
+                    module.name
+                ))?;
+
+            // TODO: The "unwrap" here and for Memory
             // forms our ghetto error-checking;
             // since we can only have one memory or table,
             // the index is irrelevant.
@@ -377,14 +401,22 @@ impl ModuleInstance {
         }
 
         for import in &module.imported_globals {
-            let target_module = other_modules.iter()
+            let target_module = other_modules
+                .iter()
                 .find(|m| import.module_name == m.name)
                 .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
-            
-            let export = target_module.exported_globals.iter()
+
+            let export = target_module
+                .exported_globals
+                .iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(target_module.name, import.field_name, "global", module.name))?;
-            
+                .ok_or_else(generate_not_exported_error!(
+                    target_module.name,
+                    import.field_name,
+                    "global",
+                    module.name
+                ))?;
+
             let addr = target_module.globals[export.value.0];
             self.globals.push(addr);
         }
@@ -480,7 +512,6 @@ impl Interpreter {
         }
     }
 
-
     /// Builder function to add a loaded and validated module to the
     /// program.
     ///
@@ -500,10 +531,10 @@ impl Interpreter {
 
         // We MUST load imports first because they consume the first indices
         // before all local definitions.
-        // "Every import defines an index in the respective index space. In each 
-        // index space, the indices of imports go before the first index of any 
+        // "Every import defines an index in the respective index space. In each
+        // index space, the indices of imports go before the first index of any
         // definition contained in the module itself."
-        
+
         let types = module.types.clone();
         let name = module.name.clone();
         let mut inst = ModuleInstance {
@@ -520,7 +551,6 @@ impl Interpreter {
             start: None,
         };
         inst.resolve_imports(&module, &self.state.module_instances)?;
-
 
         for func in module.funcs.iter() {
             let address = FunctionAddress(self.state.funcs.len());
@@ -546,12 +576,12 @@ impl Interpreter {
         inst.memory = if let Some(mut memory) = module.mem.clone() {
             let store = &mut self.store;
             for &(ref offset_expr, ref val) in &module.mem_initializers {
-                let offset_value = Interpreter::eval_constexpr(&offset_expr, store)
-                    .unwrap();
+                let offset_value = Interpreter::eval_constexpr(&offset_expr, store).unwrap();
                 // TODO: This will panic on failure;
                 // replacing it with TryFrom may be apropos.
                 let offset_i: u32 = offset_value.into();
-                memory.initialize(offset_i, &val)
+                memory
+                    .initialize(offset_i, &val)
                     .expect("Invalid memory init");
             }
             let mem_addr = MemoryAddress(store.mems.len());
@@ -561,7 +591,6 @@ impl Interpreter {
             None
         };
 
-
         // Same as memory's above; meaningless to define one if we
         // import one.
         assert!(inst.table.is_none());
@@ -569,7 +598,8 @@ impl Interpreter {
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         inst.table = if let Some(mut table) = module.tables.clone() {
-            table.initialize(&module.table_initializers)
+            table
+                .initialize(&module.table_initializers)
                 .expect("Invalid table init");
             let table_addr = TableAddress(self.store.tables.len());
             self.store.tables.push(table);
@@ -585,17 +615,19 @@ impl Interpreter {
             // associated with `self` in a closure and whatever.
             let store = &mut self.store;
             // Create an iterator of initialized Global values
-            let initialized_globals = module.globals.iter()
+            let initialized_globals = module
+                .globals
+                .iter()
                 .map(|&(ref global, ref init)| {
                     let mut g = global.clone();
-                    let init_value = Interpreter::eval_constexpr(init, store)
-                        .expect("TODO: Handle failures");
+                    let init_value =
+                        Interpreter::eval_constexpr(init, store).expect("TODO: Handle failures");
                     println!("Initializing global {:?} to {:?}", g, init_value);
                     g.initialize(init_value);
                     g
                 })
                 .collect::<Vec<_>>();
-            
+
             // Get the address of the next Global slot,
             // shove all the initialized Global's into it,
             // and then get the address again, and that's the
@@ -625,7 +657,6 @@ impl Interpreter {
 
         Ok(self)
     }
-
 
     /// Evaluates the constexpr in the current context.
     /// This is a PITA 'cause a constexpr might be `get_global`, but hey.
@@ -928,9 +959,8 @@ impl Interpreter {
             Interpreter::exec(store, state, function_addr, params_slice)
         };
 
-
         // Because a function call must actually pop values off the stack,
-        // we have to remove the values that were passed to the function in 
+        // we have to remove the values that were passed to the function in
         // `params_slice`
         // TODO: Might be easier to just slice them off directly, since they get
         // copied anyway?
@@ -961,7 +991,7 @@ impl Interpreter {
         match func.body {
             FuncBody::HostFunction(ref f) => {
                 (*f)(&mut frame.value_stack);
-            },
+            }
             FuncBody::Opcodes(ref opcodes) => {
                 use parity_wasm::elements::Opcode::*;
                 use std::usize;
@@ -1059,7 +1089,8 @@ impl Interpreter {
                             // the table to get a function index, then call that
                             // function
                             let x = x as usize;
-                            let func_type = Interpreter::resolve_type(state, func.module, TypeIdx(x));
+                            let func_type =
+                                Interpreter::resolve_type(state, func.module, TypeIdx(x));
                             let i = frame.pop_as::<u32>() as usize;
                             let table_addr = Interpreter::resolve_table(state, func.module);
                             let function_index = {
@@ -1103,8 +1134,12 @@ impl Interpreter {
                         }
                         GetGlobal(i) => {
                             let i = i as usize;
-                            let vl =
-                                Interpreter::get_global(&store.globals, &state, func.module, GlobalIdx(i));
+                            let vl = Interpreter::get_global(
+                                &store.globals,
+                                &state,
+                                func.module,
+                                GlobalIdx(i),
+                            );
                             frame.push(vl);
                         }
                         SetGlobal(i) => {
@@ -1794,23 +1829,32 @@ impl Interpreter {
         Interpreter::exec(store, state, func, args)
     }
 
-    /// Looks up a function with the given name 
+    /// Looks up a function with the given name
     /// and executes it with the given arguments.
     /// Returns the function's return value, if any.
-    pub fn run_export(&mut self, module_name: &str, func_name: &str, args: &[Value]) -> Result<Option<Value>, Error> {
+    pub fn run_export(
+        &mut self,
+        module_name: &str,
+        func_name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, Error> {
         let function_addr = {
             // TODO: Probably some duplication with ModuleInstance::resolve_imports()
             // but argh.
-            let target_module = self.state.module_instances.iter()
+            let target_module = self.state
+                .module_instances
+                .iter()
                 .find(|m| module_name == m.name)
                 .ok_or(Error::ModuleNotFound {
                     module: module_name.to_owned(),
                     dependent_module: "<Interpreter::run_export()>".to_owned(),
                 })?;
             //println!("target module: {:#?}", target_module);
-            let function_idx = target_module.exported_functions.iter()
+            let function_idx = target_module
+                .exported_functions
+                .iter()
                 .find(|funcs| {
-                    // println!("Searching for {}, got {}", func_name, funcs.name); 
+                    // println!("Searching for {}, got {}", func_name, funcs.name);
                     funcs.name == func_name
                 })
                 .ok_or(Error::NotExported {
@@ -1822,6 +1866,5 @@ impl Interpreter {
             target_module.functions[function_idx.value.0]
         };
         Ok(self.run(function_addr, args))
-
     }
 }

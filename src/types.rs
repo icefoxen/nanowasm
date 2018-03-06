@@ -7,7 +7,10 @@ use parity_wasm::elements;
 use num::ToPrimitive;
 
 /// This should be in std by now dammit!
-pub trait TryFrom<T> where Self: Sized {
+pub trait TryFrom<T>
+where
+    Self: Sized,
+{
     type Error;
     fn try_from(value: T) -> Result<Self, Self::Error>;
 }
@@ -274,7 +277,6 @@ impl_extend_into!(i64, f64);
 impl_extend_into!(u64, f64);
 impl_extend_into!(f32, f64);
 
-
 #[derive(Clone)]
 pub enum FuncBody {
     Opcodes(Vec<elements::Opcode>),
@@ -282,7 +284,7 @@ pub enum FuncBody {
     /// it can basically only affect the operation stack.
     /// This should be expanded but needs a bit of refactoring to do so,
     /// to expose more of the interpreter innards in a nice way.
-    HostFunction(Rc<Fn(&mut Vec<Value>)>)
+    HostFunction(Rc<Fn(&mut Vec<Value>)>),
 }
 
 use std::fmt;
@@ -290,7 +292,7 @@ impl fmt::Debug for FuncBody {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         match *self {
             FuncBody::Opcodes(ref o) => write!(f, "Opcodes({:?})", o),
-            FuncBody::HostFunction(_) => write!(f, "HostFunction(&mut Vec<Value>)")
+            FuncBody::HostFunction(_) => write!(f, "HostFunction(&mut Vec<Value>)"),
         }
     }
 }
@@ -339,7 +341,6 @@ impl Table {
         // TODO
         Ok(())
     }
-
 }
 
 /// A structure containing a memory space.
@@ -402,7 +403,6 @@ impl Memory {
     }
 }
 
-
 /// A restricted subset of `parity::elements::Opcode` that is
 /// valid in a constant expression (ie, data initializers)
 ///
@@ -431,11 +431,10 @@ impl TryFrom<elements::Opcode> for ConstOpcode {
             elements::Opcode::F32Const(f) => Ok(ConstOpcode::F32Const(f32::from_bits(f))),
             elements::Opcode::F64Const(f) => Ok(ConstOpcode::F64Const(f64::from_bits(f))),
             elements::Opcode::GetGlobal(i) => Ok(ConstOpcode::GetGlobal(i)),
-            op => Err(op)
+            op => Err(op),
         }
     }
 }
-
 
 /// A constant expression; a list of opcodes
 /// that can only be `const` or `get_global` instructions.
@@ -449,7 +448,8 @@ impl<'a> TryFrom<&'a [elements::Opcode]> for ConstExpr {
         // then try to turn into ConstOpcode and collect into Result<Vec<...>, ...>
         // TODO: Actually validate we end with `End` someday?
         // peekable() might make that easier.
-        let ops = opcodes.iter()
+        let ops = opcodes
+            .iter()
             .filter(|op| **op != elements::Opcode::End)
             .cloned()
             .map(ConstOpcode::try_from)
@@ -484,7 +484,6 @@ pub struct Export<T> {
     pub name: String,
     pub value: T,
 }
-
 
 #[derive(Debug, Fail)]
 pub enum Error {
