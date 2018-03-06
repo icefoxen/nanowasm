@@ -257,8 +257,16 @@ impl FuncInstance {
                     else_offset = offset;
                 }
                 // Opening another block, recurse.
-                Block(_) | If(_) => {
-                //Block(_)=> {
+                // BUGGO TODO: This stack overflows, figure out why.
+                /*
+                If(_) => {
+                    println!("IF happening!");
+                    use std::io::{self, Write};
+                    io::stdout().flush().unwrap();
+                    offset = FuncInstance::find_block_close(body, offset, accm);
+                },
+*/
+                Block(_)=> {
                     offset = FuncInstance::find_block_close(body, offset, accm);
                 }
                 _ => (),
@@ -311,40 +319,40 @@ impl ModuleInstance {
         // for existence in the appropriate array.
         // TODO: Validate the External memory/table/function/etc junk more
 
-        macro_rules! returning_closures_sucks_rancid_donkey_dong {
-            ($import: expr, $module: expr) => {
-                || Error::ModuleNotFound {
-                    module: $import.module_name.clone(),
-                    dependent_module: $module.name.clone()
-                }
-            }
+        // Turns out you CAN create closures that capture a function's environment and return them.
+        // oy.
+        fn generate_not_found_error<'a, T>(import: &'a Import<T>, module: &'a LoadedModule) -> Box<Fn() -> Error + 'a> {
+            Box::new(move || Error::ModuleNotFound {
+                module: import.module_name.clone(),
+                dependent_module: module.name.clone()
+            })
         }
 
-        macro_rules! generate_not_exported_error {
-            ($name: expr, $import: expr, $dependent_module: expr, $typ: expr) => {
-                || Error::NotExported {
-                    name: $name.clone(),
-                    module: $import.clone(),
-                    dependent_module: $dependent_module.to_owned(),
-                    typ: $typ.clone(),
-                }
-            }
+        // Same as previous function, just a different error type.
+        fn generate_not_exported_error<'a>(name: &'a str, import: &'a str, dependent_module: &'a str, typ: &'a str) -> Box<Fn() -> Error + 'a> {
+            Box::new(move || Error::NotExported {
+                name: name.to_owned(),
+                module: import.to_owned(),
+                dependent_module: dependent_module.to_owned(),
+                typ: typ.to_owned(),
+            })
         }
+        
         for import in &module.imported_functions {
             let target_module = other_modules
                 .iter()
                 .find(|m| import.module_name == m.name)
-                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
+                .ok_or_else(&*generate_not_found_error(import, module))?;
 
             let export_idx = target_module
                 .exported_functions
                 .iter()
                 .position(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(
-                    target_module.name,
-                    import.field_name,
+                .ok_or_else(&*generate_not_exported_error(
+                    &target_module.name,
+                    &import.field_name,
                     "function",
-                    module.name
+                    &module.name
                 ))?;
 
             // TODO: Assert that the import and export types match
@@ -357,17 +365,17 @@ impl ModuleInstance {
             let target_module = other_modules
                 .iter()
                 .find(|m| import.module_name == m.name)
-                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
+                .ok_or_else(&*generate_not_found_error(import, module))?;
 
             let export = target_module
                 .exported_tables
                 .iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(
-                    target_module.name,
-                    import.field_name,
+                .ok_or_else(&*generate_not_exported_error(
+                    &target_module.name,
+                    &import.field_name,
                     "table",
-                    module.name
+                    &module.name
                 ))?;
 
             // TODO: The "unwrap" here and for Memory
@@ -382,17 +390,17 @@ impl ModuleInstance {
             let target_module = other_modules
                 .iter()
                 .find(|m| import.module_name == m.name)
-                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
+                .ok_or_else(&*generate_not_found_error(import, module))?;
 
             let export = target_module
                 .exported_memories
                 .iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(
-                    target_module.name,
-                    import.field_name,
+                .ok_or_else(&*generate_not_exported_error(
+                    &target_module.name,
+                    &import.field_name,
                     "memory",
-                    module.name
+                    &module.name
                 ))?;
 
             // TODO: The "unwrap" here and for Memory
@@ -407,17 +415,17 @@ impl ModuleInstance {
             let target_module = other_modules
                 .iter()
                 .find(|m| import.module_name == m.name)
-                .ok_or_else(returning_closures_sucks_rancid_donkey_dong!(import, module))?;
+                .ok_or_else(&*generate_not_found_error(import, module))?;
 
             let export = target_module
                 .exported_globals
                 .iter()
                 .find(|e| e.name == import.field_name)
-                .ok_or_else(generate_not_exported_error!(
-                    target_module.name,
-                    import.field_name,
+                .ok_or_else(&*generate_not_exported_error(
+                    &target_module.name,
+                    &import.field_name,
                     "global",
-                    module.name
+                    &module.name
                 ))?;
 
             let addr = target_module.globals[export.value.0];
@@ -476,14 +484,14 @@ pub struct State {
 /// Per the wasm spec, this contains the **Store**, defined as all the
 /// runtime data for a collection of modules: memory's, tables, globals,
 /// and stack.  In this implementation, stack frames are locals in the
-/// `exec()` method, not an explicit structure, because otherwise
+/// `exec()` method, not an explicit structure field, because otherwise
 /// borrowing gets tricky.  We essentially use the Rust stack instead
 /// of constructing a separate one.
 ///
-/// The WASM spec has a not-immediately-obvious gap in semantics
+/// The WASM spec has a not-immediately-obvious separation in semantics
 /// between the environment in which programs are defined, loaded
 /// and validated, where all references are *purely module-local*,
-/// and the environment in which programs are executed, where all
+/// and the environment in which programs are executed, where most
 /// references are *global*; modules are loaded and all their resources
 /// are just shoved
 /// into the Store.  It distinguishes these environments by using the
@@ -523,11 +531,13 @@ impl Interpreter {
     /// So, you have to load all the modules in order of dependencies.
     ///
     /// We could load all the modules in arbitrary order, then validate+link
-    /// them at the end, but that's a PITA.
+    /// them at the end, but that's a PITA.  Also unnecessary since each module
+    /// can only depend on modules that are already loaded; you can't have
+    /// circular dependencies.
     ///
     /// This DOES run the module's start function, which potentially
     /// takes forever, soooooo.  That may not be what we want.
-    /// However it IS what the spec proscribes, so!
+    /// However it IS what the spec prescribes, so!
     pub fn with_module(mut self, module: ValidatedModule) -> Result<Self, Error> {
         let module: LoadedModule = module.into_inner();
         let module_instance_address = ModuleAddress(self.state.module_instances.len());
@@ -565,27 +575,31 @@ impl Interpreter {
                 module: module_instance_address,
                 jump_table: FuncInstance::compute_jump_table(&func.body),
             };
-            println!("Created function instance: {:?}", instance);
+            //println!("Created function instance: {:?}", instance);
             self.state.funcs.push(instance);
             inst.functions.push(address);
         }
 
-        // It's sorta meaningless to define a memory when we already
-        // import one, since we can only have one.
-        assert!(inst.memory.is_none());
         // If the module has a memory, clone it, initialize it, shove
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         inst.memory = if let Some(mut memory) = module.mem.clone() {
+            // It's sorta meaningless to define a memory when we already
+            // import one, since we can only have one.
+            if inst.memory.is_some() {
+                return Err(Error::Invalid {
+                    module: module.name.clone(),
+                    reason: "Memory was imported but we also define a local one".to_owned(),
+                });
+            }
+            
             let store = &mut self.store;
             for &(ref offset_expr, ref val) in &module.mem_initializers {
                 let offset_value = Interpreter::eval_constexpr(&offset_expr, store).unwrap();
                 // TODO: This will panic on failure;
-                // replacing it with TryFrom may be apropos.
+                // replacing it with TryFrom may be apropos.  But annoying.
                 let offset_i: u32 = offset_value.into();
-                memory
-                    .initialize(offset_i, &val)
-                    .expect("Invalid memory init");
+                memory.initialize(offset_i, &val)?
             }
             let mem_addr = MemoryAddress(store.mems.len());
             store.mems.push(memory);
@@ -594,16 +608,20 @@ impl Interpreter {
             None
         };
 
-        // Same as memory's above; meaningless to define one if we
-        // import one.
-        assert!(inst.table.is_none());
         // Like memories, if the module has a table, clone it, initialize it, shove
         // it into the store, and return the address of it.  Otherwise,
         // return None.
         inst.table = if let Some(mut table) = module.tables.clone() {
-            table
-                .initialize(&module.table_initializers)
-                .expect("Invalid table init");
+            // Same as memory's above; meaningless to define a table if we
+            // import one.
+            if inst.table.is_some() {
+                return Err(Error::Invalid {
+                    module: module.name.clone(),
+                    reason: "Table was imported but we also define a local one".to_owned(),
+                });
+            }
+
+            table.initialize(&module.table_initializers)?;
             let table_addr = TableAddress(self.store.tables.len());
             self.store.tables.push(table);
             Some(table_addr)
@@ -624,12 +642,12 @@ impl Interpreter {
                 .map(|&(ref global, ref init)| {
                     let mut g = global.clone();
                     let init_value =
-                        Interpreter::eval_constexpr(init, store).expect("TODO: Handle failures");
+                        Interpreter::eval_constexpr(init, store)?;
                     println!("Initializing global {:?} to {:?}", g, init_value);
                     g.initialize(init_value);
-                    g
+                    Ok(g)
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>,_>>()?;
 
             // Get the address of the next Global slot,
             // shove all the initialized Global's into it,
@@ -644,7 +662,9 @@ impl Interpreter {
         };
 
         // Start function.
-        inst.start = module.start.map(|start_idx| inst.functions[start_idx.0]);
+        // TODO: Need to handle index-out-of-bound here
+        inst.start = module.start
+            .map(|start_idx| inst.functions[start_idx.0]);
         //println!("Instance start function: {:?}, module start function: {:?}", inst.start, module.start);
         // Save it for later too.
         let start_function = inst.start;
@@ -666,7 +686,8 @@ impl Interpreter {
     fn eval_constexpr(expr: &ConstExpr, store: &Store) -> Result<Value, Error> {
         // I have no damn idea why a constexpr is defined to be a sequence
         // when it seems to only ever actually use the last value.
-        let expr = expr.0.last().unwrap();
+        let expr = expr.0.last()
+            .expect("Expected non-empty constexpr, got empty one; should never happen");
         match *expr {
             ConstOpcode::I32Const(v) => Ok(Value::I32(v)),
             ConstOpcode::I64Const(v) => Ok(Value::I64(v)),
@@ -814,8 +835,12 @@ impl Interpreter {
         N: Into<Value>,
     {
         let address = frame.pop_as::<i32>();
-        // BUGGO: Make sure wrap-arounds don't happen here!
-        let effective_address = address + offset as i32;
+        // TODO: Should trap on runtime errors!
+        // ...though now I'm wondering how to implement trap...
+        // it's kinda gotta be a return value from a function,
+        // or MAYBE a flag that gets set on the interpreter state or such...
+        let effective_address = address.checked_add(offset as i32)
+            .expect("Address of load instruction wrapped; this is an error!");
         let mem_contents = Interpreter::get_memory_with(
             &mut store.mems,
             &state,
@@ -843,8 +868,9 @@ impl Interpreter {
         DestN: Into<Value>,
     {
         let address = frame.pop_as::<i32>();
-        // BUGGO: Make sure wrap-arounds don't happen here!
-        let effective_address = address + offset as i32;
+        // TODO: Should trap on error.
+        let effective_address = address.checked_add(offset as i32)
+            .expect("Address of load instruction wrapped; this is an error!");
         let mem_contents = Interpreter::get_memory_with(
             &mut store.mems,
             &state,
@@ -871,7 +897,9 @@ impl Interpreter {
     {
         let vl = frame.pop_as::<N>();
         let address = frame.pop_as::<i32>();
-        // BUGGO: Make sure wrap-arounds don't happen here!
+        // TODO: Trap on error.
+        let effective_address = address.checked_add(offset as i32)
+            .expect("Address of load instruction wrapped; this is an error!");
         let effective_address = address + offset as i32;
         Interpreter::set_memory_with(
             &mut store.mems,
@@ -898,8 +926,9 @@ impl Interpreter {
     {
         let vl: DestN = frame.pop_as::<SourceN>().wrap();
         let address = frame.pop_as::<i32>();
-        // BUGGO: Make sure wrap-arounds don't happen here!
-        let effective_address = address + offset as i32;
+        // TODO: Trap on error.
+        let effective_address = address.checked_add(offset as i32)
+            .expect("Address of load instruction wrapped; this is an error!");
         Interpreter::set_memory_with(
             &mut store.mems,
             &state,
@@ -979,9 +1008,9 @@ impl Interpreter {
         }
     }
 
-    /// Actually do the interpretation of the given function, assuming
-    /// that a stack frame already exists for it with args and locals
-    /// and such
+    /// Actually do the interpretation of the given function, creating
+    /// a stack frame for it.  Returns the return value of the function,
+    /// if any.
     pub fn exec(
         store: &mut Store,
         state: &State,

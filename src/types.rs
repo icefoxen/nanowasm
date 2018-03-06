@@ -342,7 +342,7 @@ impl Table {
         self.max = Some(size);
     }
 
-    pub fn initialize(&mut self, inits: &[(ConstExpr, Vec<FuncIdx>)]) -> Result<(), ()> {
+    pub fn initialize(&mut self, inits: &[(ConstExpr, Vec<FuncIdx>)]) -> Result<(), Error> {
         // TODO
         Ok(())
     }
@@ -399,10 +399,15 @@ impl Memory {
         //self.max = Some(size);
     }
 
-    pub fn initialize(&mut self, offset: u32, val: &[u8]) -> Result<(), ()> {
+    pub fn initialize(&mut self, offset: u32, val: &[u8]) -> Result<(), Error> {
         let offset_start = offset as usize;
         let offset_end = offset_start + val.len();
-        assert!(offset_end <= self.data.len());
+        if offset_end > self.data.len() {
+            return Err(Error::Invalid {
+                module: "TODO BUGGO ???".to_owned(),
+                reason: format!("Memory has length {} but tried to initialize it with values at index {}", self.data.len(), offset_end),
+            });
+        }
         self.data.as_mut_slice()[offset_start..offset_end].copy_from_slice(val);
         Ok(())
     }
