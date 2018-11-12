@@ -15,7 +15,7 @@ The road map is, more or less in order:
  * Make it possible to set hard execution limits on memory and CPU consumed (somehow) and easily sandbox it to forbid access to random resources (like files)
  * Make it reasonably fast?
  * Nice debugging tools?
- * JIT?  Either using LLVM, cretonne, or writing my own; I kind of want to write my own for the experience.
+ * JIT?  Either using LLVM, Cranelift, or writing my own; I kind of want to write my own for the experience.
  * Load custom modules from DLL's written in Rust or C???
 
 # Non-goals
@@ -68,7 +68,7 @@ them.  Need to think about this.  There may be other places; the wasm test suite
  * parity-wasm: A crate for serializing/deserializing wasm code.  
  * [wasmi](https://github.com/pepyakin/wasmi): A webassembly interpreter; used to be part of parity-wasm but got
    split off into its own thing.  Quite good, but I wanted to write my own
- * <https://github.com/sunfishcode/wasmstandalone>: A wasm standalone JIT using cretonne
+ * <https://github.com/CraneStation/wasmtime>: A wasm standalone JIT using Cranelift
  * [WebAssembly reference interpreter](https://github.com/WebAssembly/spec/tree/master/interpreter)
  * [WebAssembly Binary Toolkit](https://github.com/WebAssembly/wabt)
 
